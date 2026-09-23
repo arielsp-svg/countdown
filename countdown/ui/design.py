@@ -464,9 +464,35 @@ class ScrollArea(tk.Frame):
         self._window = self.canvas.create_window(0, 0, window=self.body, anchor="nw")
         self.body.bind("<Configure>", self._body_resized)
         self.canvas.bind("<Configure>", self._canvas_resized)
-        for widget in (self, self.canvas, self.body):
-            widget.bind("<Enter>", self._grab_wheel)
-            widget.bind("<Leave>", self._release_wheel)
+        # The wheel is bound on the window, not on this frame. Tk puts every
+        # widget's toplevel in its bind tags, so one binding there catches the
+        # wheel wherever the pointer happens to be - over a card, a label, or
+        # the empty margin. Binding it on this frame instead only worked while
+        # the pointer was over bare background, which is almost nowhere.
+        window = self.winfo_toplevel()
+        self._window_bindings = []
+        for sequence, handler in (("<MouseWheel>", self._wheel),
+                                  ("<Button-4>", self._wheel),
+                                  ("<Button-5>", self._wheel),
+                                  ("<Prior>", lambda _e: self._page(-1)),
+                                  ("<Next>", lambda _e: self._page(1))):
+            self._window_bindings.append(
+                (sequence, window.bind(sequence, handler, add="+")))
+        # Switching tabs destroys this frame but leaves the window standing, so
+        # the bindings have to go with it. Left behind, they would pile up and
+        # fire into a canvas that no longer exists.
+        self.bind("<Destroy>", self._forget_bindings)
+
+    def _forget_bindings(self, event=None):
+        if event is not None and event.widget is not self:
+            return
+        window = self.winfo_toplevel()
+        for sequence, funcid in getattr(self, "_window_bindings", ()):
+            try:
+                window.unbind(sequence, funcid)
+            except tk.TclError:
+                pass
+        self._window_bindings = []
 
     def _on_scroll(self, first, last):
         # Show the bar only when there is something to scroll to.
@@ -482,20 +508,19 @@ class ScrollArea(tk.Frame):
     def _canvas_resized(self, event):
         self.canvas.itemconfigure(self._window, width=event.width)
 
-    # Wheel events go to whatever the pointer is over, so they are bound while
-    # the pointer is inside and released when it leaves.
-    def _grab_wheel(self, _event=None):
-        self.canvas.bind_all("<MouseWheel>", self._wheel)       # Windows, macOS
-        self.canvas.bind_all("<Button-4>", self._wheel)         # X11
-        self.canvas.bind_all("<Button-5>", self._wheel)
+    def _scrollable(self) -> bool:
+        try:
+            first, last = self.canvas.yview()
+        except tk.TclError:          # the canvas is gone
+            return False
+        return not (first <= 0.0 and last >= 1.0)
 
-    def _release_wheel(self, _event=None):
-        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            self.canvas.unbind_all(sequence)
+    def _page(self, direction):
+        if self._scrollable():
+            self.canvas.yview_scroll(direction, "pages")
 
     def _wheel(self, event):
-        first, last = self.canvas.yview()
-        if first <= 0.0 and last >= 1.0:
+        if not self._scrollable():
             return
         if getattr(event, "num", None) == 4:
             step = -1

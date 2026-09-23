@@ -72,6 +72,7 @@ class Countdown:
         design.adopt_system_theme()
         self._busy = False
         self._scanned_this_launch = False
+        self._resolved = False
         self._next_read_not_before = None
 
     # --- who is signed in --------------------------------------------------
@@ -128,13 +129,12 @@ class Countdown:
         self.state = state_module.load()
         self.config = config_module.load()
 
-        if not self.resolve_user():
-            # No department means there is nothing to evaluate. The app stays
-            # quiet, and the reason is waiting in the maintenance window.
-            state_module.save(self.state)
-            self._busy = False
-            return
-
+        # The table is read whether or not the person is known. Reading it is
+        # what R4 asks for; knowing who is signed in only decides whether any
+        # of its rows are alerted on. Keeping the two apart means the last read
+        # timestamp, the departments and the skipped rows are all available to
+        # the maintenance window even on a machine nobody is matched to.
+        self._resolved = self.resolve_user()
         url = self.config.sharepoint_url
         thread = threading.Thread(target=self._download, args=(url,), daemon=True)
         thread.start()
@@ -169,6 +169,11 @@ class Countdown:
             for item in skipped:
                 log.info("row %s skipped, RO date cell reads %r", item["row"], item["value"])
             state_module.save(self.state)
+
+            if not self._resolved:
+                log.info("read %d rows, but nobody here is matched to a "
+                         "department, so nothing is evaluated", len(rows))
+                return
 
             due = engine.due_systems(rows, self.state)
             overdue = engine.overdue_systems(rows, self.state)
