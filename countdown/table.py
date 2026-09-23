@@ -208,6 +208,20 @@ def _looks_like_a_url(source: str) -> bool:
     return scheme in ("http", "https", "file")
 
 
+def resolve_local(source: str):
+    """The filesystem path a source points at, or None when it is a URL.
+
+    Writing back is only possible for a path. An anonymous SharePoint link can
+    be downloaded through and nothing more.
+    """
+    if not source or _looks_like_a_url(source):
+        return None
+    path = os.path.expandvars(os.path.expanduser(source.strip().strip('"')))
+    if not os.path.isabs(path):
+        path = os.path.join(paths.app_dir(), path)
+    return path
+
+
 def _read_local(source: str) -> bytes:
     """Read the table from a folder, a mapped drive or a UNC share.
 

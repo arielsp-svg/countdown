@@ -28,17 +28,21 @@ def personal_number_from_logon():
     return None
 
 
-def resolve(state):
-    """The personal number to use, preferring the logon name over the typed one.
+def resolve(users, personal_number=None):
+    """Find the signed in person in the directory.
 
-    The spec notes the number is collected twice. The logon name wins because it
-    cannot be mistyped; the typed value is kept so a mismatch stays visible in
-    the admin window.
+    Returns (user, reason). `user` is None when nobody matches, and `reason`
+    says why, for the log and the maintenance window.
     """
-    from_logon = personal_number_from_logon()
-    typed = state.data.get("personal_number_typed", "")
-    if from_logon:
-        if typed and typed != from_logon:
-            log.warning("typed personal number %s differs from logon %s", typed, from_logon)
-        return from_logon
-    return typed
+    from . import users as users_module
+
+    number = personal_number or personal_number_from_logon()
+    if not number:
+        return None, (f"the logon name {logon_name()!r} is not of the form "
+                      "iaf\\<personal number>, so there is no number to look up")
+    user = users_module.find(users, number)
+    if user is None:
+        return None, f"personal number {number} is not in the user list"
+    if not user.department:
+        return None, f"personal number {number} has no department in the user list"
+    return user, ""

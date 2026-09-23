@@ -16,6 +16,7 @@ DEFAULTS = {
     "admin_username": "",
     "admin_password": "",
     "sharepoint_url": "",
+    "users_url": "",
     "departments": "",
 }
 
@@ -28,6 +29,12 @@ admin_password = change-me
 
 # Anonymous SharePoint direct link to the RO table (.xlsx or .csv).
 sharepoint_url =
+
+# The user list: name, personal number, department, one row per person.
+# A link can only be read. Point this at a file path - a UNC share, a mapped
+# drive, or a name next to the .exe - to add and remove users from the
+# maintenance window.
+users_url =
 
 # Closed list offered on the first run window (R2). Comma separated.
 # Leave blank to take the list from the table's department column instead.
@@ -47,6 +54,10 @@ class Config(dict):
     @property
     def sharepoint_url(self) -> str:
         return self.get("sharepoint_url", "").strip()
+
+    @property
+    def users_url(self) -> str:
+        return self.get("users_url", "").strip()
 
     @property
     def departments(self) -> list:

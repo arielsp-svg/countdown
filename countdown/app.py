@@ -3,6 +3,10 @@
 Reads the department RO table from SharePoint once a day and pops an alert when
 a system in the user's department is approaching its RO date.
 
+Who the user is comes from the user list, a second workbook linked from
+countdown.txt: the personal number is taken from the Windows logon name (R3) and
+looked up there. Nobody is ever asked to fill anything in.
+
 Nothing is visible unless an alert is due or the maintenance window is opened
 (R12). Launching the .exe a second time while it is running opens the
 maintenance window instead of starting a second copy.
@@ -16,8 +20,8 @@ from datetime import date, datetime, timedelta
 from tkinter import messagebox
 
 from . import (config as config_module, engine, identity, paths, single_instance,
-               startup, state as state_module, table)
-from .ui import admin as admin_ui, alert as alert_ui, firstrun as firstrun_ui
+               startup, state as state_module, table, users as users_module)
+from .ui import admin as admin_ui, alert as alert_ui
 from .ui import design
 
 log = logging.getLogger("countdown")
@@ -70,48 +74,40 @@ class Countdown:
         self._scanned_this_launch = False
         self._next_read_not_before = None
 
-    # --- first run (R2) ----------------------------------------------------
-    def department_choices(self):
-        """Closed list for the first run window.
+    # --- who is signed in --------------------------------------------------
+    def resolve_user(self):
+        """Look the signed in person up in the user list.
 
-        The list from countdown.txt wins, which is what the maintenance window
-        edits. With none set, the list is taken from the table's own department
-        column, which keeps the two in step.
+        Returns True when a department is known and alerts can be evaluated.
+        Everything about the attempt is recorded, so the maintenance window can
+        explain a machine that never alerts.
         """
-        if self.config.departments:
-            return self.config.departments
-        seen = self.state.data.get("departments_seen") or []
-        if seen:
-            return seen
         try:
-            rows, _ = table.fetch(self.config.sharepoint_url)
-        except table.TableError as exc:
-            log.warning("could not derive the department list: %s", exc)
-            return []
-        found = sorted({r.department for r in rows if r.department})
-        self.state.data["departments_seen"] = found
-        state_module.save(self.state)
-        return found
+            users, skipped = users_module.load(self.config.users_url)
+        except users_module.UsersError as exc:
+            log.warning("could not read the user list: %s", exc)
+            self.state.set_directory_status(str(exc))
+            return False
+        except Exception as exc:
+            # Anything else - a locked workbook, a corrupt file - must not take
+            # the scheduler down with it. The app stays quiet and says why.
+            log.exception("unexpected failure reading the user list")
+            self.state.set_directory_status(f"the user list could not be read: {exc}")
+            return False
 
-    def run_first_run(self) -> bool:
-        departments = self.department_choices()
-        if not departments:
-            messagebox.showerror(
-                "Countdown",
-                "The list of departments is not available.\n\n"
-                "Set `departments` or a reachable `sharepoint_url` in:\n"
-                f"{paths.config_path()}\n\nThe app will start once one of them is set.",
-            )
+        self.state.data["users_skipped"] = skipped
+        user, reason = identity.resolve(users)
+        if user is None:
+            log.warning("no department for this machine: %s", reason)
+            self.state.set_directory_status(reason)
             return False
-        result = firstrun_ui.ask(self.root, departments)
-        if not result:
-            log.info("first run window closed without details; not starting")
-            return False
-        name, number, department = result
-        self.state.set_identity(name, number, department)
-        self.state.data["personal_number"] = identity.resolve(self.state) or number
-        state_module.save(self.state)
-        log.info("first run complete for %s, department %s", name, department)
+
+        if (user.department != self.state.department
+                or user.personal_number != self.state.personal_number):
+            log.info("resolved %s (%s) in %s", user.name, user.personal_number,
+                     user.department)
+        self.state.set_identity(user.name, user.personal_number, user.department)
+        self.state.set_directory_status("")
         return True
 
     # --- daily cycle (R4 to R11) ------------------------------------------
@@ -127,11 +123,18 @@ class Countdown:
     def start_cycle(self):
         self._busy = True
         self._scanned_this_launch = True
-        # Pick up anything the maintenance window changed since the last run
-        # (R7, and the department list). Both live outside this process.
+        # Pick up anything the maintenance window changed since the last run:
+        # the tiers of R7, and the user list. Both live outside this process.
         self.state = state_module.load()
         self.config = config_module.load()
-        self.state.data["personal_number"] = identity.resolve(self.state) or self.state.personal_number
+
+        if not self.resolve_user():
+            # No department means there is nothing to evaluate. The app stays
+            # quiet, and the reason is waiting in the maintenance window.
+            state_module.save(self.state)
+            self._busy = False
+            return
+
         url = self.config.sharepoint_url
         thread = threading.Thread(target=self._download, args=(url,), daemon=True)
         thread.start()
@@ -195,9 +198,6 @@ class Countdown:
 
     # --- entry point -------------------------------------------------------
     def run(self):
-        if not self.state.first_run_complete:
-            if not self.run_first_run():
-                return 1
         self.root.after(1500, self.tick)
         self.root.mainloop()
         return 0

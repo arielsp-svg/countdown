@@ -24,17 +24,17 @@ MAX_SNOOZES_PER_SYSTEM = 3
 _lock = threading.Lock()
 
 _DEFAULT = {
-    "version": 1,
-    "first_run_complete": False,
+    "version": 2,
     "name": "",
     "personal_number": "",
-    "personal_number_typed": "",
     "department": "",
+    "directory_status": "",   # why this machine has no department, if it has none
     "tiers": DEFAULT_TIERS,
     "last_read": None,        # ISO timestamp of the last successful table read
     "systems": {},            # key -> {last_alert, snooze_until, snooze_count, ...}
     "departments_seen": [],   # department values observed in the table
     "skipped_rows": [],       # rows whose RO date cell was not a date
+    "users_skipped": [],      # user rows with no personal number or department
 }
 
 
@@ -46,11 +46,7 @@ class State:
     def __init__(self, data=None):
         self.data = data if data is not None else _default()
 
-    # --- identity (R2, R3) -------------------------------------------------
-    @property
-    def first_run_complete(self) -> bool:
-        return bool(self.data.get("first_run_complete"))
-
+    # --- identity, resolved from the user list (R3) ------------------------
     @property
     def department(self) -> str:
         return self.data.get("department", "")
@@ -62,9 +58,15 @@ class State:
     def set_identity(self, name, personal_number, department):
         self.data["name"] = name
         self.data["personal_number"] = personal_number
-        self.data["personal_number_typed"] = personal_number
         self.data["department"] = department
-        self.data["first_run_complete"] = True
+
+    @property
+    def directory_status(self) -> str:
+        """Empty when the user was found; otherwise why he was not."""
+        return self.data.get("directory_status", "")
+
+    def set_directory_status(self, reason: str):
+        self.data["directory_status"] = reason or ""
 
     # --- admin tiers (R7) --------------------------------------------------
     @property

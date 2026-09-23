@@ -8,7 +8,7 @@ import logging
 import tkinter as tk
 
 from .. import config as config_module
-from .. import paths, state as state_module
+from .. import paths, state as state_module, users as users_module
 from ..state import MAX_SNOOZE_DAYS, MAX_SNOOZES_PER_SYSTEM
 from . import design as d
 
@@ -90,7 +90,7 @@ class CredentialPrompt:
 
 TABS = [
     ("tiers", "Alert tiers"),
-    ("departments", "Departments"),
+    ("users", "Users"),
     ("snoozed", "Snoozed"),
     ("skipped", "Skipped rows"),
     ("status", "Status"),
@@ -98,7 +98,7 @@ TABS = [
 
 
 class AdminWindow:
-    WIDTH, HEIGHT = 720, 540
+    WIDTH, HEIGHT = 860, 650
     SIDEBAR = 180
 
     def __init__(self, root, state):
@@ -145,7 +145,7 @@ class AdminWindow:
             child.destroy()
         frame = tk.Frame(self.content, bg=d.C["bg"])
         frame.pack(fill="both", expand=True, padx=28, pady=26)
-        {"tiers": self._tiers, "departments": self._departments,
+        {"tiers": self._tiers, "users": self._users,
          "snoozed": self._snoozed, "skipped": self._skipped,
          "status": self._status}[key](frame)
 
@@ -153,7 +153,7 @@ class AdminWindow:
         tk.Label(parent, text=title, font=d.TITLE(), fg=d.C["text"], bg=d.C["bg"],
                  anchor="w").pack(fill="x")
         tk.Label(parent, text=subtitle, font=d.SUB(), fg=d.C["text_2"], bg=d.C["bg"],
-                 anchor="w", justify="left", wraplength=440).pack(fill="x", pady=(3, 18))
+                 anchor="w", justify="left", wraplength=560).pack(fill="x", pady=(3, 18))
 
     # --- R7 ----------------------------------------------------------------
     def _tiers(self, parent):
@@ -239,93 +239,157 @@ class AdminWindow:
         self.tier_message.configure(
             text="Restored 12 months monthly, and 6 months weekly.")
 
-    # --- the closed list offered at first run (R2) --------------------------
-    def _departments(self, parent):
-        self._heading(parent, "Departments",
-                      "The closed list offered on the first run window. It is kept in "
-                      "countdown.txt, so it travels with the .exe to other machines.")
-
+    # --- the user list ------------------------------------------------------
+    def _users(self, parent):
         cfg = config_module.load()
-        current = cfg.departments
+        source = cfg.users_url
+        self._heading(parent, "Users",
+                      "Name, personal number and department, one row per person. "
+                      "The app matches the Windows logon name against the personal "
+                      "number, so nobody is ever asked to fill anything in.")
 
-        card = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+        if not source:
+            self._empty_card(parent,
+                             "No user list is set. Add users_url to countdown.txt, "
+                             "pointing at a workbook or a file path.")
+            return
+
+        try:
+            users, skipped = users_module.load(source)
+        except users_module.UsersError as exc:
+            self._empty_card(parent, str(exc))
+            return
+
+        self._users_cache = users
+        editable = users_module.writable_path(source) is not None
+
+        card = d.Surface(parent, radius=14, padding=(18, 12), bg=d.C["bg"])
         card.pack(fill="x")
         body = card.body
-
-        if not current:
-            tk.Label(body, text="No departments set. Until one is added, the first run "
-                                "window falls back to the table's own department column.",
-                     font=d.SUB(), fg=d.C["text_3"], bg=d.C["surface"], anchor="w",
-                     justify="left", wraplength=420).pack(fill="x", pady=4)
-        for index, name in enumerate(current):
+        if not users:
+            tk.Label(body, text="The list is empty.", font=d.BODY(),
+                     fg=d.C["text_3"], bg=d.C["surface"], anchor="w").pack(
+                fill="x", pady=6)
+        for index, user in enumerate(users[:9]):
             if index:
                 tk.Frame(body, height=1, bg=d.C["hairline"]).pack(fill="x")
             line = tk.Frame(body, bg=d.C["surface"])
             line.pack(fill="x", pady=2)
-            tk.Label(line, text=name, font=d.BODY(), fg=d.C["text"],
-                     bg=d.C["surface"], anchor="w").pack(side="left", pady=6)
-            d.Button(line, "Remove", kind="plain", bg=d.C["surface"],
-                     command=lambda n=name: self._remove_department(n)).pack(side="right")
+            if editable:
+                d.Button(line, "Remove", kind="plain", bg=d.C["surface"],
+                         command=lambda u=user: self._remove_user(u)).pack(side="right")
+            tk.Label(line, text=user.name or "(no name)", font=d.BODY(),
+                     fg=d.C["text"], bg=d.C["surface"], anchor="w", width=18).pack(
+                side="left", pady=5)
+            tk.Label(line, text=user.personal_number, font=d.SUB(),
+                     fg=d.C["text_2"], bg=d.C["surface"], anchor="w", width=11).pack(
+                side="left")
+            tk.Label(line, text=user.department, font=d.SUB(), fg=d.C["text_2"],
+                     bg=d.C["surface"], anchor="w").pack(side="left", fill="x",
+                                                         expand=True)
         card.fit()
 
-        self.department_var = tk.StringVar()
-        adder = tk.Frame(parent, bg=d.C["bg"])
-        adder.pack(fill="x", pady=(14, 0))
-        field = d.Field(adder, self.department_var, bg=d.C["bg"], width=240)
-        field.pack(side="left")
-        d.Button(adder, "Add", kind="filled", bg=d.C["bg"],
-                 command=self._add_department).pack(side="left", padx=8)
-        field.entry.bind("<Return>", lambda _e: self._add_department())
+        if len(users) > 9:
+            tk.Label(parent, text=f"and {len(users) - 9} more in the workbook",
+                     font=d.CAPTION(), fg=d.C["text_3"], bg=d.C["bg"], anchor="w").pack(
+                fill="x", pady=(6, 0))
 
-        self.department_message = tk.Label(parent, text="", font=d.CAPTION(),
-                                           fg=d.C["text_2"], bg=d.C["bg"], anchor="w",
-                                           justify="left", wraplength=440)
-        self.department_message.pack(fill="x", pady=(10, 0))
+        self.user_message = tk.Label(parent, text="", font=d.CAPTION(),
+                                     fg=d.C["text_2"], bg=d.C["bg"], anchor="w",
+                                     justify="left", wraplength=440)
 
-        seen = [name for name in (self.state.data.get("departments_seen") or [])
-                if name.casefold() not in {c.casefold() for c in current}]
-        if seen:
-            tk.Label(parent, text="Seen in the table but not on the list:",
-                     font=d.CAPTION(), fg=d.C["text_2"], bg=d.C["bg"], anchor="w").pack(
-                fill="x", pady=(16, 6))
-            d.Button(parent, "Add " + ", ".join(seen[:4]) + ("…" if len(seen) > 4 else ""),
-                     kind="tinted", bg=d.C["bg"],
-                     command=lambda: self._add_many(seen)).pack(anchor="w")
+        if not editable:
+            # An anonymous link can be downloaded through and nothing more.
+            self.user_message.pack(fill="x", pady=(14, 0))
+            self.user_message.configure(
+                text="This list is a link, so it can only be read. Point users_url "
+                     "at a file path - a share, a mapped drive, or a name next to "
+                     "the .exe - to add and remove people here.")
+            return
 
-    def _write_departments(self, names, message):
-        if config_module.save_value("departments", ", ".join(names)):
-            self.show("departments")
-            self.department_message.configure(text=message)
+        self._add_user_form(parent, users)
+        self.user_message.pack(fill="x", pady=(12, 0))
+        if skipped:
+            self.user_message.configure(
+                text=f"{len(skipped)} row(s) in the workbook have no personal number "
+                     "or no department, and are ignored.")
+
+    def _add_user_form(self, parent, users):
+        self.new_name = tk.StringVar()
+        self.new_number = tk.StringVar()
+        self.new_department = tk.StringVar()
+
+        form = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+        form.pack(fill="x", pady=(14, 0))
+        tk.Label(form.body, text="Add someone", font=d.HEADLINE(), fg=d.C["text"],
+                 bg=d.C["surface"], anchor="w").pack(fill="x", pady=(0, 10))
+
+        grid = tk.Frame(form.body, bg=d.C["surface"])
+        grid.pack(fill="x")
+        for column, (caption, var, width) in enumerate([
+                ("Name", self.new_name, 170),
+                ("Personal number", self.new_number, 130)]):
+            cell = tk.Frame(grid, bg=d.C["surface"])
+            cell.grid(row=0, column=column, sticky="w", padx=(0, 14))
+            tk.Label(cell, text=caption, font=d.CAPTION(), fg=d.C["text_2"],
+                     bg=d.C["surface"], anchor="w").pack(fill="x")
+            d.Field(cell, var, bg=d.C["surface"], width=width).pack(pady=(4, 0))
+
+        known = sorted({u.department for u in users if u.department}
+                       | set(self.state.data.get("departments_seen") or []))
+        cell = tk.Frame(grid, bg=d.C["surface"])
+        cell.grid(row=0, column=2, sticky="w")
+        tk.Label(cell, text="Department", font=d.CAPTION(), fg=d.C["text_2"],
+                 bg=d.C["surface"], anchor="w").pack(fill="x")
+        if known:
+            d.Select(cell, known, self.new_department, placeholder="Choose",
+                     bg=d.C["surface"], width=150).pack(pady=(4, 0))
         else:
-            self.department_message.configure(
-                text="countdown.txt could not be written. Check the folder's permissions.")
+            d.Field(cell, self.new_department, bg=d.C["surface"], width=150).pack(
+                pady=(4, 0))
 
-    def _add_department(self):
-        name = self.department_var.get().strip()
-        current = config_module.load().departments
-        if not name:
-            self.department_message.configure(text="Type a department name first.")
+        d.Button(form.body, "Add to the list", kind="filled", bg=d.C["surface"],
+                 command=self._add_user).pack(anchor="w", pady=(12, 0))
+        form.fit()
+
+    def _empty_card(self, parent, message):
+        card = d.Surface(parent, radius=14, padding=(18, 20), bg=d.C["bg"])
+        card.pack(fill="x")
+        tk.Label(card.body, text=message, font=d.BODY(), fg=d.C["text_3"],
+                 bg=d.C["surface"], anchor="w", justify="left",
+                 wraplength=420).pack(fill="x")
+        card.fit()
+
+    def _write_users(self, users, message):
+        try:
+            users_module.save(config_module.load().users_url, users)
+        except users_module.UsersError as exc:
+            self.user_message.configure(text=str(exc))
             return
-        if name.casefold() in {c.casefold() for c in current}:
-            self.department_message.configure(text=f"{name} is already on the list.")
+        except Exception as exc:  # a locked workbook, a vanished share
+            log.exception("could not write the user list")
+            self.user_message.configure(
+                text=f"The user list could not be saved: {exc}")
             return
-        self._write_departments(current + [name], f"Added {name}.")
+        self.show("users")
+        self.user_message.configure(text=message)
 
-    def _add_many(self, names):
-        current = config_module.load().departments
-        known = {c.casefold() for c in current}
-        fresh = [n for n in names if n.casefold() not in known]
-        self._write_departments(current + fresh,
-                                f"Added {len(fresh)} from the table.")
+    def _add_user(self):
+        try:
+            updated = users_module.add(self._users_cache, self.new_name.get(),
+                                       self.new_number.get(), self.new_department.get())
+        except users_module.UsersError as exc:
+            self.user_message.configure(text=str(exc))
+            return
+        self._write_users(updated, f"Added {self.new_name.get().strip()}.")
 
-    def _remove_department(self, name):
-        current = config_module.load().departments
-        remaining = [c for c in current if c.casefold() != name.casefold()]
-        note = f"Removed {name}."
-        if name.casefold() == (self.state.department or "").casefold():
-            # Removing it does not un-set anyone already running.
-            note += " Users already set to it keep it until their next first run."
-        self._write_departments(remaining, note)
+    def _remove_user(self, user):
+        note = f"Removed {user.name or user.personal_number}."
+        if user.personal_number == self.state.personal_number:
+            note += (" That is the person signed in here, so this machine will "
+                     "stop alerting at the next run.")
+        self._write_users(users_module.remove(self._users_cache, user.personal_number),
+                          note)
 
     # --- lists -------------------------------------------------------------
     def _rows(self, parent, columns, records, empty):
@@ -391,14 +455,12 @@ class AdminWindow:
         self._heading(parent, "Status", "What the app knows right now.")
         cfg = config_module.load()
         last_read = self.state.last_read
-        typed = self.state.data.get("personal_number_typed", "")
-        resolved = self.state.personal_number
         lines = [
-            ("User", self.state.data.get("name", "")),
-            ("Personal number",
-             resolved + (f"   (typed at first run: {typed})"
-                         if typed and typed != resolved else "")),
-            ("Department", self.state.department),
+            ("User", self.state.data.get("name", "") or "not resolved"),
+            ("Personal number", self.state.personal_number or "-"),
+            ("Department", self.state.department or "-"),
+            ("Directory", self.state.directory_status or "matched in the user list"),
+            ("User list", self._shorten(cfg.users_url or "(not set)")),
             ("Last table read",
              last_read.strftime("%d/%m/%Y at %H:%M") if last_read else "never"),
             ("Table source", self._shorten(cfg.sharepoint_url or "(not set)")),

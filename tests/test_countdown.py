@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from countdown import app as app_module  # noqa: E402
 from countdown import calendar_file, config, engine, identity, table  # noqa: E402
+from countdown import users as users_module  # noqa: E402
 from countdown import state as state_module  # noqa: E402
 
 TODAY = date(2026, 9, 23)
@@ -25,6 +26,13 @@ def make_state(department="Alpha"):
     st = state_module.State()
     st.set_identity("Tester", "1234567", department)
     return st
+
+
+USER_HEADER = b"Name,Personal number,Department\n"
+
+
+def build_users(*rows):
+    return USER_HEADER + b"".join(rows)
 
 
 class TestTableReading(unittest.TestCase):
@@ -200,26 +208,98 @@ class TestSnooze(unittest.TestCase):
 class TestIdentity(unittest.TestCase):
     """R3: the personal number comes from the iaf\\<number> logon name."""
 
-    def test_extracts_the_number(self):
-        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "iaf", "8123456"
-        self.assertEqual(identity.personal_number_from_logon(), "8123456")
-
-    def test_other_logon_shapes_fall_back_to_the_typed_value(self):
-        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "CORP", "r.levi"
-        self.assertIsNone(identity.personal_number_from_logon())
-        st = make_state()
-        st.data["personal_number_typed"] = "999"
-        self.assertEqual(identity.resolve(st), "999")
-
-    def test_the_logon_wins_over_a_mistyped_number(self):
-        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "iaf", "8123456"
-        st = make_state()
-        st.data["personal_number_typed"] = "8123455"
-        self.assertEqual(identity.resolve(st), "8123456")
+    def setUp(self):
+        self.users, _ = users_module.parse(build_users(
+            b"R. Levi,8123456,Avionics\n",
+            b"D. Cohen,8123457,Logistics\n"))
 
     def tearDown(self):
         os.environ.pop("USERDOMAIN", None)
         os.environ.pop("USERNAME", None)
+
+    def test_extracts_the_number(self):
+        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "iaf", "8123456"
+        self.assertEqual(identity.personal_number_from_logon(), "8123456")
+
+    def test_the_logon_resolves_to_that_person(self):
+        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "iaf", "8123457"
+        user, reason = identity.resolve(self.users)
+        self.assertEqual((user.name, user.department), ("D. Cohen", "Logistics"))
+        self.assertEqual(reason, "")
+
+    def test_a_logon_shape_it_cannot_read_gives_a_reason(self):
+        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "CORP", "r.levi"
+        user, reason = identity.resolve(self.users)
+        self.assertIsNone(user)
+        self.assertIn("iaf", reason)
+
+    def test_someone_missing_from_the_list_gives_a_reason(self):
+        os.environ["USERDOMAIN"], os.environ["USERNAME"] = "iaf", "9999999"
+        user, reason = identity.resolve(self.users)
+        self.assertIsNone(user)
+        self.assertIn("not in the user list", reason)
+
+
+class TestUserDirectory(unittest.TestCase):
+    """The user list: name, personal number and department, held elsewhere."""
+
+    def test_reads_the_three_columns(self):
+        users, skipped = users_module.parse(build_users(b"R. Levi,8123456,Avionics\n"))
+        self.assertEqual(skipped, [])
+        self.assertEqual((users[0].name, users[0].personal_number,
+                          users[0].department), ("R. Levi", "8123456", "Avionics"))
+
+    def test_reordered_and_renamed_headers_still_read(self):
+        users, _ = users_module.parse(
+            b"Department,ID,Full name\nAvionics,8123456,R. Levi\n")
+        self.assertEqual(users[0].department, "Avionics")
+        self.assertEqual(users[0].personal_number, "8123456")
+
+    def test_excel_turning_the_number_into_a_float(self):
+        self.assertEqual(users_module.normalise_number("8123456.0"), "8123456")
+
+    def test_a_number_written_with_the_domain(self):
+        self.assertEqual(users_module.normalise_number(r"iaf\8123456"), "8123456")
+
+    def test_a_row_without_a_number_or_department_is_skipped(self):
+        users, skipped = users_module.parse(build_users(
+            b"No Number,,Avionics\n", b"No Dept,8123456,\n"))
+        self.assertEqual(users, [])
+        self.assertEqual(len(skipped), 2)
+
+    def test_a_missing_column_is_reported(self):
+        with self.assertRaises(users_module.UsersError) as ctx:
+            users_module.parse(b"Name,Favourite colour\nR. Levi,blue\n")
+        self.assertIn("missing required column", str(ctx.exception))
+
+    def test_adding_someone(self):
+        users, _ = users_module.parse(build_users(b"R. Levi,8123456,Avionics\n"))
+        updated = users_module.add(users, "D. Cohen", "8123457", "Logistics")
+        self.assertEqual(len(updated), 2)
+
+    def test_a_duplicate_number_is_refused(self):
+        users, _ = users_module.parse(build_users(b"R. Levi,8123456,Avionics\n"))
+        with self.assertRaises(users_module.UsersError):
+            users_module.add(users, "Someone Else", "8123456", "Logistics")
+
+    def test_an_incomplete_entry_is_refused(self):
+        users = []
+        for bad in [("", "8123456", "Avionics"), ("R. Levi", "", "Avionics"),
+                    ("R. Levi", "8123456", "")]:
+            with self.assertRaises(users_module.UsersError):
+                users_module.add(users, *bad)
+
+    def test_removing_someone(self):
+        users, _ = users_module.parse(build_users(
+            b"R. Levi,8123456,Avionics\n", b"D. Cohen,8123457,Logistics\n"))
+        self.assertEqual(len(users_module.remove(users, "8123456")), 1)
+
+    def test_a_link_cannot_be_written_back(self):
+        self.assertIsNone(users_module.writable_path(
+            "https://sharepoint.internal/:x:/s/dept/EbQ"))
+
+    def test_a_path_can_be_written_back(self):
+        self.assertIsNotNone(users_module.writable_path("users.xlsx"))
 
 
 class TestConfig(unittest.TestCase):
@@ -378,7 +458,7 @@ class TestStatePersistence(unittest.TestCase):
         with open(paths.state_path(), "w", encoding="utf-8") as fh:
             fh.write("{ not json")
         st = state_module.load()
-        self.assertFalse(st.first_run_complete)
+        self.assertEqual(st.department, "")
         self.assertEqual(st.tiers, sorted(state_module.DEFAULT_TIERS, key=lambda t: -t["months"]))
 
 

@@ -159,8 +159,10 @@ Open `countdown.txt` and set:
 - **First launch** registers the .exe under `HKCU\...\CurrentVersion\Run`, so it
   starts with Windows (R1). The value is rewritten on every launch, so moving
   the folder or copying the .exe to another machine repairs itself.
-- **First run window** asks for name, personal number and department. Nothing
-  runs in the background until all three are given (R2).
+- **Nobody is ever asked anything.** Who the user is comes from the user list, a
+  second workbook linked from `countdown.txt`: the personal number is taken from
+  the Windows logon name (R3) and the row is looked up. A machine whose logon
+  is not in the list stays silent, and the maintenance window says why.
 - **On every launch, and every 24 hours after that**, the table is read. Only
   rows in your department count (R4, R5). R4 asks for the 24 hour cadence; the
   read on launch is added on top, because the app starts with Windows and a
@@ -182,10 +184,9 @@ Run `Countdown.exe` again while it is already running — or run it with
 
 - **Alert tiers** — the threshold in months and the frequency in days per tier.
   Changes apply at the next daily run (R7).
-- **Departments** — the closed list the first run window offers. Add one, remove
-  one, or take the ones the last table read found. The list is written back to
-  `countdown.txt`, so it travels with the .exe rather than staying on the machine
-  that edited it.
+- **Users** — the directory: name, personal number and department. Add someone,
+  remove someone, and see who is on the list. Writes back to the workbook
+  `users_url` points at, when that is a path rather than a link.
 - **Snoozed systems** — what has been put off, until when, and how many times.
 - **Skipped rows** — rows whose RO date cell holds free text, so the table owner
   can fix the cell.
@@ -225,13 +226,14 @@ changed; the code points at the requirement it serves.
 | **State has no home** (R13) | Everything the app writes lives in the folder the .exe runs from, as `countdown-state-<user>.json`, so nothing is kept anywhere else and the folder is portable. The per user filename settles "a different user signs in on the same machine": he gets his own first run rather than inheriting one. |
 | **Personal number collected twice** | The field stays, prefilled from the logon name. On a mismatch the logon value wins, because it cannot be mistyped; the typed value is kept and shown in the maintenance window. A logon name not of the form `iaf\<number>` falls back to the typed value. |
 | **Snooze ceiling** | At most 90 days per snooze and at most 3 snoozes per system, after which the button is refused. Bounded above by the RO date and below by tomorrow, so the picker cannot produce an invalid date. Snoozes are per user, and every live one is listed in the maintenance window. |
-| **Department list source** | Maintained in the maintenance window, written back to `countdown.txt`. With none set, it falls back to the table's own department column. |
+| **Department list source** | Gone as a question: a department now comes from the person's row in the user list. |
+| **The personal number collected twice** | Gone as a question: it is taken from the logon name and never typed. |
 | **Add to calendar** | An .ics file handed to the shell, which opens it in the default calendar. No Outlook automation, no extra dependency. |
 | **Link unreachable or layout changed** | Retry quietly in 2 hours. The user is not interrupted for an infrastructure problem; the failure goes to the log. |
 | **Several systems due the same day** | One popup per system, shown one after another, soonest RO date first. |
 | **RO date already passed** | No alert. Overdue rows are counted in the log rather than nagging daily. |
 | **Rows skipped for a text RO date** | Silent to the user, listed in the maintenance window's *Skipped rows* tab. |
-| **First run window closed unfilled** | Nothing is saved and the app does not start. The window returns at the next Windows startup. |
+| **A logon that is not in the user list** | The app stays silent rather than guessing a department. The reason is recorded and shown in the maintenance window's Status tab. |
 | **Machine off for weeks** | One alert on the next run, then the cadence resumes. Missed intervals do not stack. |
 | **Popup closed with the X** | Not an acknowledgement. The system is offered again at the next daily run. |
 
