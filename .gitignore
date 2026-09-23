@@ -9,5 +9,7 @@ countdown.log
 countdown.lock
 state.json
 demo/sandbox/
-.venv/
 .DS_Store
+countdown-state-*.json
+countdown-*.log
+countdown-*.lock

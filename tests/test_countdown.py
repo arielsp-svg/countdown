@@ -5,7 +5,10 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 
-os.environ.setdefault("APPDATA", tempfile.mkdtemp())
+# Everything the app writes now lives beside the .exe, so the tests have to
+# point that somewhere disposable or they would rewrite the real
+# countdown.txt sitting in the project root.
+os.environ["COUNTDOWN_HOME"] = tempfile.mkdtemp()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from countdown import app as app_module  # noqa: E402
@@ -307,49 +310,48 @@ class TestConfig(unittest.TestCase):
 
     def test_missing_file_yields_defaults(self):
         cfg = config.load()
-        self.assertIsInstance(cfg.departments, list)
+        self.assertEqual(cfg.sharepoint_url, cfg.sharepoint_url)
+        self.assertIsInstance(cfg.users_url, str)
 
-    def test_malformed_lines_are_ignored(self):
+    def test_incomplete_credentials_are_not_accepted(self):
         cfg = config.Config(dict(config.DEFAULTS))
         cfg["admin_username"] = ""
         self.assertFalse(cfg.has_admin_credentials)
 
-    def test_department_list_is_split(self):
-        cfg = config.Config(dict(config.DEFAULTS, departments=" Alpha , Bravo ,, "))
-        self.assertEqual(cfg.departments, ["Alpha", "Bravo"])
+    def test_both_workbook_links_are_read(self):
+        cfg = config.Config(dict(config.DEFAULTS,
+                                 sharepoint_url=" ro.xlsx ", users_url=" users.xlsx "))
+        self.assertEqual(cfg.sharepoint_url, "ro.xlsx")
+        self.assertEqual(cfg.users_url, "users.xlsx")
 
 
-class TestDepartmentList(unittest.TestCase):
-    """The closed list of R2, maintained from the maintenance window."""
+class TestConfigWriteBack(unittest.TestCase):
+    """The maintenance window writes back to countdown.txt."""
 
     def setUp(self):
         from countdown import paths
         self.path = paths.config_path()
         config.ensure_exists()
 
-    def test_a_department_is_written_back_to_the_txt(self):
-        config.save_value("departments", "Avionics, Logistics")
-        self.assertEqual(config.load().departments, ["Avionics", "Logistics"])
+    def test_a_value_is_written_back(self):
+        config.save_value("users_url", r"\\fs01\share\users.xlsx")
+        self.assertEqual(config.load().users_url, r"\\fs01\share\users.xlsx")
 
     def test_writing_one_key_leaves_the_others_alone(self):
         config.save_value("admin_password", "hunter2")
-        config.save_value("departments", "Avionics")
+        config.save_value("users_url", "users.xlsx")
         cfg = config.load()
         self.assertEqual(cfg.admin_password, "hunter2")
-        self.assertEqual(cfg.departments, ["Avionics"])
+        self.assertEqual(cfg.users_url, "users.xlsx")
 
     def test_the_admin_comments_survive_a_write(self):
-        config.save_value("departments", "Avionics")
+        config.save_value("users_url", "users.xlsx")
         with open(self.path, encoding="utf-8") as fh:
             body = fh.read()
         self.assertIn("# Countdown configuration", body)
 
     def test_an_unknown_key_is_refused(self):
         self.assertFalse(config.save_value("not_a_real_key", "x"))
-
-    def test_an_emptied_list_reads_back_as_empty(self):
-        config.save_value("departments", "")
-        self.assertEqual(config.load().departments, [])
 
 
 class TestCalendarFile(unittest.TestCase):

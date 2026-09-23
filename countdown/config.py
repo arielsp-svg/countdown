@@ -17,7 +17,6 @@ DEFAULTS = {
     "admin_password": "",
     "sharepoint_url": "",
     "users_url": "",
-    "departments": "",
 }
 
 TEMPLATE = """\
@@ -35,10 +34,6 @@ sharepoint_url =
 # drive, or a name next to the .exe - to add and remove users from the
 # maintenance window.
 users_url =
-
-# Closed list offered on the first run window (R2). Comma separated.
-# Leave blank to take the list from the table's department column instead.
-departments =
 """
 
 
@@ -58,11 +53,6 @@ class Config(dict):
     @property
     def users_url(self) -> str:
         return self.get("users_url", "").strip()
-
-    @property
-    def departments(self) -> list:
-        raw = self.get("departments", "")
-        return [p.strip() for p in raw.split(",") if p.strip()]
 
     @property
     def has_admin_credentials(self) -> bool:
