@@ -6,6 +6,8 @@ Outlook automation, no profile access and no extra dependency.
 """
 import logging
 import os
+import subprocess
+import sys
 import tempfile
 import uuid
 from datetime import date, timedelta
@@ -67,12 +69,19 @@ def open_in_calendar(row) -> bool:
     except OSError as exc:
         log.warning("could not write the calendar file: %s", exc)
         return False
+    return _hand_to_shell(path)
+
+
+def _hand_to_shell(path: str) -> bool:
+    """Open the .ics with whatever the machine treats as its calendar."""
     try:
-        os.startfile(path)  # Windows only, by design
+        if sys.platform.startswith("win"):
+            os.startfile(path)                       # the delivered path
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])         # so the app can be tried on a Mac
+        else:
+            subprocess.Popen(["xdg-open", path])
         return True
-    except AttributeError:
-        log.info("calendar file written to %s (no shell handler on this platform)", path)
-        return False
-    except OSError as exc:
-        log.warning("could not open the calendar file: %s", exc)
+    except (OSError, AttributeError) as exc:
+        log.warning("could not open the calendar file %s: %s", path, exc)
         return False

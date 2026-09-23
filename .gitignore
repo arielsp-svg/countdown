@@ -8,3 +8,5 @@ shots/
 countdown.log
 countdown.lock
 state.json
+demo/sandbox/
+.venv/

@@ -40,6 +40,48 @@ docker run --rm --platform linux/amd64 -v "$PWD":/src -w /src tobix/pywine:3.12 
 The result is the same `dist/Countdown.exe`. On Apple Silicon this runs under
 x86 emulation, so expect it to be slow.
 
+## Try it on a Mac
+
+The app is plain Python and tkinter, so it runs from source on macOS. Two things
+are Windows only and simply log that they were skipped: registering for startup
+(R1) and, on Windows, handing the .ics to Outlook — on a Mac it opens in
+Calendar instead.
+
+```
+demo/try-on-mac.sh
+```
+
+The first run creates `.venv`, installs `openpyxl`, and writes a sandbox under
+`demo/sandbox`: its own `countdown.txt` and a sample table whose RO dates are
+generated relative to today. Everything the app writes stays in that folder, so
+your real home directory and any live configuration are untouched.
+
+Pick **Avionics** at the first run window. The sample table then produces:
+
+| Row | What it shows |
+|---|---|
+| F-16 Barak, 4 months out | Inside 6 months, so the weekly tier: an alert right away |
+| F-15 Ra'am, 10 months out | Inside 12 months, so the monthly tier: an alert right away |
+| C-130 Shimshon, 18 months out | Beyond both windows, no alert |
+| Apache AH-64, 3 months past | RO date already gone, no alert (R6) |
+| Blackhawk, `to be confirmed` | Unreadable RO date, skipped and listed in the admin window (R4) |
+| Beechcraft, Logistics | Another department, filtered out (R5) |
+
+Other things worth trying:
+
+```
+demo/try-on-mac.sh --reset    # wipe the sandbox, so the first run window returns
+demo/try-on-mac.sh --admin    # the maintenance window; sign in as admin / secret
+```
+
+In the maintenance window, change the tight tier to 12 months and reset, or set
+a frequency to zero, to see R7's edge cases handled. Snooze a system and it
+appears under **Snoozed systems**; the Blackhawk row appears under
+**Skipped rows**.
+
+`COUNTDOWN_HOME` is what redirects the configuration and state into that
+sandbox. Nothing on a delivered Windows machine sets it.
+
 ## Before handing it out
 
 Open `countdown.txt` and set:
