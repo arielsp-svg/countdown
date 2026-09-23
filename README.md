@@ -27,7 +27,18 @@ The result is `dist\Countdown.exe`, next to `dist\countdown.txt`.
 
 **Without a Windows machine** — push this folder to GitHub. The workflow in
 `.github/workflows/build.yml` runs the tests and builds the .exe on a Windows
-runner; download it from the run's artifacts.
+runner; download it from the run's artifacts, or from the release.
+
+**On macOS or Linux, with Docker** — build through Wine:
+
+```
+docker run --rm --platform linux/amd64 -v "$PWD":/src -w /src tobix/pywine:3.12 sh -c \
+  'wine python -m pip install -q -r requirements.txt pyinstaller==6.11.1 &&
+   wine python -m PyInstaller --clean --noconfirm Countdown.spec'
+```
+
+The result is the same `dist/Countdown.exe`. On Apple Silicon this runs under
+x86 emulation, so expect it to be slow.
 
 ## Before handing it out
 
