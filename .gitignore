@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+shots/
+*.spec.bak
+countdown.log
+countdown.lock
+state.json

@@ -1,0 +1,28 @@
+# Builds Countdown.exe on a Windows runner and attaches it to the run.
+# Use this when there is no Windows machine to build on.
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller==6.11.1
+      - run: python -m unittest discover -s tests -q
+      - run: pyinstaller --clean --noconfirm Countdown.spec
+      - run: copy countdown.txt dist\countdown.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Countdown
+          path: |
+            dist/Countdown.exe
+            dist/countdown.txt
