@@ -82,6 +82,36 @@ appears under **Snoozed systems**; the Blackhawk row appears under
 `COUNTDOWN_HOME` is what redirects the configuration and state into that
 sandbox. Nothing on a delivered Windows machine sets it.
 
+## On an airgapped machine
+
+Nothing needs installing. The .exe carries its own Python runtime
+(`python312.dll`), the C runtime (`VCRUNTIME140.dll`, `ucrtbase.dll`), tkinter
+and `openpyxl` inside it. Its import table asks the operating system for five
+libraries only, and every one of them is part of a stock Windows install:
+
+```
+ADVAPI32.dll   COMCTL32.dll   GDI32.dll   KERNEL32.dll   USER32.dll
+```
+
+So there is no Python to deploy, no Visual C++ redistributable, and no .NET.
+Copy the two files onto the machine and run them.
+
+The table source is whatever the closed network offers. `sharepoint_url`
+accepts any of these:
+
+| Form | Example |
+|---|---|
+| An internal SharePoint link | `https://sharepoint.internal/:x:/s/dept/EbQ...` |
+| A UNC share | `\\\\fs01\\shared\\ro-dates.xlsx` |
+| A mapped drive or local folder | `D:\\tables\\ro-dates.xlsx` |
+| A file beside the .exe | `ro-dates.xlsx` |
+
+The one thing an airgap does not solve is code signing. An unsigned .exe that
+writes a `Run` key is exactly the shape endpoint tooling blocks, and on a closed
+network there is usually no reputation service to appeal to. Getting the binary
+allow-listed, or signed with an internal certificate, is worth settling before
+rollout.
+
 ## Before handing it out
 
 Open `countdown.txt` and set:
@@ -157,6 +187,18 @@ changed; the code points at the requirement it serves.
 - **Cleartext credentials.** `countdown.txt` sits next to the .exe and any user
   on the machine can read and edit it. This is what R13 and R8 ask for together;
   the owner of the systems should confirm it is acceptable.
+
+## The interface
+
+The windows are drawn on a canvas rather than themed with ttk. ttk cannot round
+a corner, it looks different on every platform, and R13 rules out a widget
+toolkit as a dependency, so `countdown/ui/design.py` holds a small set of pieces
+- surfaces, pill buttons, fields, a closed list, a month view - built on nothing
+but tkinter.
+
+The app follows the Windows light and dark setting, reading
+`AppsUseLightTheme` the way a native application would, and picks up Segoe UI
+Variable Display where it exists.
 
 ## Tests
 

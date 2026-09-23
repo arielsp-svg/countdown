@@ -7,10 +7,13 @@ recorded, never alerted on (R4 edge cases).
 import csv
 import io
 import logging
+import os
 import re
 import urllib.parse
 import urllib.request
 from datetime import date, datetime
+
+from . import paths
 
 log = logging.getLogger(__name__)
 
@@ -200,22 +203,62 @@ def _direct_link(url: str) -> str:
     return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
 
 
-def download(url: str, timeout: int = 60) -> bytes:
-    if not url:
-        raise TableError("no SharePoint link is configured in countdown.txt")
+def _looks_like_a_url(source: str) -> bool:
+    scheme = urllib.parse.urlsplit(source).scheme.lower()
+    return scheme in ("http", "https", "file")
+
+
+def _read_local(source: str) -> bytes:
+    """Read the table from a folder, a mapped drive or a UNC share.
+
+    An airgapped machine cannot reach SharePoint, so the table arrives some
+    other way: a file server on the closed network, or a copy placed in the
+    app's own folder. Both are ordinary paths from here.
+    """
+    path = os.path.expandvars(os.path.expanduser(source))
+    if not os.path.isabs(path):
+        # Relative to the .exe, so a table sitting beside it just works.
+        path = os.path.join(paths.app_dir(), path)
+    if not os.path.exists(path):
+        raise TableError(f"the table was not found at {path}")
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise TableError(f"could not read the table at {path}: {exc}") from exc
+
+
+def _read_remote(url: str, timeout: int) -> bytes:
     request = urllib.request.Request(
         _direct_link(url),
         headers={"User-Agent": "Countdown/1.0", "Accept": "*/*"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read()
+            return response.read()
     except Exception as exc:  # urllib raises a wide family of errors
-        raise TableError(f"could not reach the SharePoint link: {exc}") from exc
+        raise TableError(f"could not reach the table link: {exc}") from exc
+
+
+def download(source: str, timeout: int = 60) -> bytes:
+    """Fetch the table bytes from wherever the configuration points.
+
+    Accepts an http(s) link, a file:// URL, a Windows path, a UNC share such as
+    \\\\server\\share\\ro.xlsx, or a name relative to the .exe.
+    """
+    if not source:
+        raise TableError("no table source is configured in countdown.txt")
+    source = source.strip().strip('"')
+    if _looks_like_a_url(source):
+        payload = _read_remote(source, timeout)
+    else:
+        payload = _read_local(source)
     if not payload:
-        raise TableError("the SharePoint link returned an empty file")
-    if payload[:15].lower().startswith(b"<!doctype html") or payload[:6].lower() == b"<html>":
-        raise TableError("the link returned a web page, not the table; it may have moved or been revoked")
+        raise TableError("the table is empty")
+    head = payload[:15].lower()
+    if head.startswith(b"<!doctype html") or head[:6] == b"<html>":
+        raise TableError("that link returned a web page, not the table; "
+                         "it may have moved or been revoked")
     return payload
 
 

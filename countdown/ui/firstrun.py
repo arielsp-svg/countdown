@@ -6,12 +6,13 @@ app, and the window returns at the next Windows startup.
 """
 import logging
 import tkinter as tk
-from tkinter import ttk
 
 from .. import identity
-from .widgets import apply_style, centre
+from . import design as d
 
 log = logging.getLogger(__name__)
+
+WIDTH = 420
 
 
 class FirstRunWindow:
@@ -21,58 +22,65 @@ class FirstRunWindow:
         self.departments = list(departments)
 
         self.window = tk.Toplevel(root)
-        self.window.title("Countdown - first run")
-        self.window.configure(bg="#f4f5f7")
+        self.window.title("Countdown")
         self.window.resizable(False, False)
-        apply_style(self.window)
+        d.dress(self.window)
 
-        frame = ttk.Frame(self.window, padding=(22, 18))
-        frame.pack(fill="both", expand=True)
+        outer = tk.Frame(self.window, bg=d.C["bg"])
+        outer.pack(fill="both", expand=True, padx=26, pady=26)
 
-        ttk.Label(frame, text="Countdown", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            frame,
-            text="Countdown watches the RO dates of your department and tells you\n"
-                 "before one comes due. Fill these in once.",
-            style="Muted.TLabel", justify="left",
-        ).pack(anchor="w", pady=(2, 14))
+        tk.Label(outer, text="Countdown", font=d.DISPLAY(), fg=d.C["text"],
+                 bg=d.C["bg"], anchor="w").pack(fill="x")
+        tk.Label(outer,
+                 text="Watches the RO dates for your department\nand tells you before one comes due.",
+                 font=d.BODY(), fg=d.C["text_2"], bg=d.C["bg"],
+                 anchor="w", justify="left").pack(fill="x", pady=(4, 20))
+
+        card = d.Surface(outer, radius=16, padding=(20, 18), bg=d.C["bg"])
+        card.pack(fill="x")
 
         self.name_var = tk.StringVar()
         self.number_var = tk.StringVar(value=identity.personal_number_from_logon() or "")
         self.department_var = tk.StringVar()
 
-        self._field(frame, "Name", self.name_var)
-        self._field(frame, "Personal number", self.number_var)
+        body = card.body
+        self._label(body, "Name").pack(fill="x")
+        self.name_field = d.Field(body, self.name_var, bg=d.C["surface"])
+        self.name_field.pack(fill="x", pady=(6, 14))
 
-        ttk.Label(frame, text="Department").pack(anchor="w", pady=(10, 2))
-        self.department_box = ttk.Combobox(
-            frame, textvariable=self.department_var, values=self.departments,
-            state="readonly", width=38,
-        )
-        self.department_box.pack(anchor="w")
+        self._label(body, "Personal number").pack(fill="x")
+        self.number_field = d.Field(body, self.number_var, bg=d.C["surface"])
+        self.number_field.pack(fill="x", pady=(6, 14))
 
-        self.error = ttk.Label(frame, text="", foreground="#b3261e", style="Muted.TLabel")
-        self.error.pack(anchor="w", pady=(10, 0))
+        self._label(body, "Department").pack(fill="x")
+        self.department_select = d.Select(body, self.departments, self.department_var,
+                                          placeholder="Choose your department",
+                                          bg=d.C["surface"])
+        self.department_select.pack(fill="x", pady=(6, 0))
+        card.fit()
 
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x", pady=(16, 0))
-        ttk.Button(buttons, text="Cancel", command=self._cancel).pack(side="right")
-        ttk.Button(buttons, text="Start", style="Accent.TButton",
-                   command=self._submit).pack(side="right", padx=(0, 8))
+        self.error = tk.Label(outer, text="", font=d.CAPTION(), fg=d.C["danger"],
+                              bg=d.C["bg"], anchor="w", justify="left",
+                              wraplength=WIDTH - 52)
+        self.error.pack(fill="x", pady=(12, 0))
+
+        d.Button(outer, "Start", kind="filled", stretch=True,
+                 command=self._submit, bg=d.C["bg"]).pack(fill="x", pady=(8, 8))
+        d.Button(outer, "Not now", kind="plain", stretch=True,
+                 command=self._cancel, bg=d.C["bg"]).pack(fill="x")
 
         for var in (self.name_var, self.number_var, self.department_var):
             var.trace_add("write", lambda *_: self.error.configure(text=""))
 
         self.window.protocol("WM_DELETE_WINDOW", self._cancel)
         self.window.bind("<Return>", lambda _event: self._submit())
-        centre(self.window)
-        self.window.transient(root)
-        self.window.grab_set()
+        d.present(self.window, root, width=WIDTH + 52)
         self.window.focus_force()
+        self.name_field.entry.focus_set()
 
-    def _field(self, parent, label, variable):
-        ttk.Label(parent, text=label).pack(anchor="w", pady=(10, 2))
-        ttk.Entry(parent, textvariable=variable, width=40).pack(anchor="w")
+    def _label(self, parent, text):
+        return tk.Label(parent, text=text, font=d.SUB(), fg=d.C["text_2"],
+                        bg=d.C["surface"], anchor="w")
 
     def _submit(self):
         name = self.name_var.get().strip()

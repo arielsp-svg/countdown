@@ -18,7 +18,7 @@ from tkinter import messagebox
 from . import (config as config_module, engine, identity, paths, single_instance,
                startup, state as state_module, table)
 from .ui import admin as admin_ui, alert as alert_ui, firstrun as firstrun_ui
-from .ui.widgets import apply_style
+from .ui import design
 
 log = logging.getLogger("countdown")
 
@@ -43,7 +43,7 @@ class Countdown:
         self.root = tk.Tk()
         self.root.withdraw()          # R12: no window when nothing is due
         self.root.title("Countdown")
-        apply_style(self.root)
+        design.adopt_system_theme()
         self._busy = False
         self._next_read_not_before = None
 
@@ -163,7 +163,7 @@ class Countdown:
                 self.state.mark_alerted(key, today)
             elif outcome == "snooze" and chosen:
                 # R11: quiet until the chosen date, then the cadence resumes.
-                self.state.set_snooze(key, chosen)
+                self.state.set_snooze(key, chosen, label=row.label)
                 log.info("%s snoozed until %s", row.label, chosen)
             else:
                 log.info("%s dismissed with the X; it will be offered again", row.label)
@@ -182,7 +182,7 @@ class Countdown:
 def open_maintenance_only() -> int:
     root = tk.Tk()
     root.withdraw()
-    apply_style(root)
+    design.adopt_system_theme()
     admin_ui.open_maintenance(root, config_module.load(), state_module.load())
     root.destroy()
     return 0

@@ -6,65 +6,77 @@ next daily run.
 """
 import logging
 import tkinter as tk
-from tkinter import ttk
 
 from .. import config as config_module
 from .. import paths, state as state_module
 from ..state import MAX_SNOOZE_DAYS, MAX_SNOOZES_PER_SYSTEM
-from .widgets import apply_style, centre
+from . import design as d
 
 log = logging.getLogger(__name__)
 
 
 class CredentialPrompt:
+    WIDTH = 360
+
     def __init__(self, root, cfg):
         self.cfg = cfg
         self.ok = False
         self.window = tk.Toplevel(root)
-        self.window.title("Countdown - maintenance")
-        self.window.configure(bg="#f4f5f7")
+        self.window.title("Countdown")
         self.window.resizable(False, False)
-        apply_style(self.window)
+        d.dress(self.window)
 
-        frame = ttk.Frame(self.window, padding=(22, 18))
-        frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="Maintenance", style="Title.TLabel").pack(anchor="w")
+        outer = tk.Frame(self.window, bg=d.C["bg"])
+        outer.pack(fill="both", expand=True, padx=26, pady=26)
+        tk.Label(outer, text="Maintenance", font=d.TITLE(), fg=d.C["text"],
+                 bg=d.C["bg"], anchor="w").pack(fill="x")
 
         if not cfg.has_admin_credentials:
             # R8 edge case: the file is missing, empty or malformed.
-            ttk.Label(
-                frame,
-                text=f"No administrator credentials are set.\nAdd admin_username and "
-                     f"admin_password to:\n{paths.config_path()}",
-                style="Muted.TLabel", justify="left",
-            ).pack(anchor="w", pady=(10, 14))
-            ttk.Button(frame, text="Close", command=self.window.destroy).pack(anchor="e")
-            self._finish()
+            tk.Label(outer,
+                     text="No administrator credentials are set. Add "
+                          "admin_username and admin_password to countdown.txt.",
+                     font=d.BODY(), fg=d.C["text_2"], bg=d.C["bg"], anchor="w",
+                     justify="left", wraplength=self.WIDTH).pack(fill="x", pady=(8, 6))
+            tk.Label(outer, text=paths.config_path(), font=d.CAPTION(),
+                     fg=d.C["text_3"], bg=d.C["bg"], anchor="w", justify="left",
+                     wraplength=self.WIDTH).pack(fill="x", pady=(0, 16))
+            d.Button(outer, "Close", kind="filled", stretch=True,
+                     command=self.window.destroy, bg=d.C["bg"]).pack(fill="x")
+            self._present(root)
             return
+
+        tk.Label(outer, text="Sign in to change the alert settings.",
+                 font=d.BODY(), fg=d.C["text_2"], bg=d.C["bg"], anchor="w").pack(
+            fill="x", pady=(4, 18))
 
         self.user_var = tk.StringVar()
         self.password_var = tk.StringVar()
-        ttk.Label(frame, text="Username").pack(anchor="w", pady=(12, 2))
-        entry = ttk.Entry(frame, textvariable=self.user_var, width=30)
-        entry.pack(anchor="w")
-        ttk.Label(frame, text="Password").pack(anchor="w", pady=(10, 2))
-        ttk.Entry(frame, textvariable=self.password_var, show="•", width=30).pack(anchor="w")
+        card = d.Surface(outer, radius=16, padding=(20, 18), bg=d.C["bg"])
+        card.pack(fill="x")
+        tk.Label(card.body, text="Username", font=d.SUB(), fg=d.C["text_2"],
+                 bg=d.C["surface"], anchor="w").pack(fill="x")
+        self.user_field = d.Field(card.body, self.user_var, bg=d.C["surface"])
+        self.user_field.pack(fill="x", pady=(6, 14))
+        tk.Label(card.body, text="Password", font=d.SUB(), fg=d.C["text_2"],
+                 bg=d.C["surface"], anchor="w").pack(fill="x")
+        d.Field(card.body, self.password_var, show="•", bg=d.C["surface"]).pack(
+            fill="x", pady=(6, 0))
+        card.fit()
 
-        self.error = ttk.Label(frame, text="", foreground="#b3261e", style="Muted.TLabel")
-        self.error.pack(anchor="w", pady=(10, 0))
-
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x", pady=(14, 0))
-        ttk.Button(buttons, text="Cancel", command=self.window.destroy).pack(side="right")
-        ttk.Button(buttons, text="Open", style="Accent.TButton",
-                   command=self._check).pack(side="right", padx=(0, 8))
+        self.error = tk.Label(outer, text="", font=d.CAPTION(), fg=d.C["danger"],
+                              bg=d.C["bg"], anchor="w")
+        self.error.pack(fill="x", pady=(12, 0))
+        d.Button(outer, "Open", kind="filled", stretch=True, command=self._check,
+                 bg=d.C["bg"]).pack(fill="x", pady=(8, 8))
+        d.Button(outer, "Cancel", kind="plain", stretch=True,
+                 command=self.window.destroy, bg=d.C["bg"]).pack(fill="x")
         self.window.bind("<Return>", lambda _e: self._check())
-        entry.focus_set()
-        self._finish()
+        self._present(root)
+        self.user_field.entry.focus_set()
 
-    def _finish(self):
-        centre(self.window)
-        self.window.grab_set()
+    def _present(self, root):
+        d.present(self.window, root, width=self.WIDTH + 52)
         self.window.focus_force()
 
     def _check(self):
@@ -76,64 +88,109 @@ class CredentialPrompt:
             self.error.configure(text="Those credentials do not match.")
 
 
+TABS = [
+    ("tiers", "Alert tiers"),
+    ("snoozed", "Snoozed"),
+    ("skipped", "Skipped rows"),
+    ("status", "Status"),
+]
+
+
 class AdminWindow:
+    WIDTH, HEIGHT = 720, 540
+    SIDEBAR = 180
+
     def __init__(self, root, state):
         self.state = state
         self.window = tk.Toplevel(root)
-        self.window.title("Countdown - maintenance")
-        self.window.configure(bg="#f4f5f7")
-        apply_style(self.window)
+        self.window.title("Countdown")
+        self.window.minsize(self.WIDTH, self.HEIGHT)
+        d.dress(self.window)
 
-        notebook = ttk.Notebook(self.window)
-        notebook.pack(fill="both", expand=True, padx=12, pady=12)
-        notebook.add(self._tiers_tab(notebook), text="Alert tiers")
-        notebook.add(self._snoozed_tab(notebook), text="Snoozed systems")
-        notebook.add(self._skipped_tab(notebook), text="Skipped rows")
-        notebook.add(self._status_tab(notebook), text="Status")
+        shell = tk.Frame(self.window, bg=d.C["bg"])
+        shell.pack(fill="both", expand=True)
 
-        centre(self.window, 640, 540)
-        self.window.grab_set()
+        self.sidebar = tk.Frame(shell, bg=d.C["surface_sunken"], width=self.SIDEBAR)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        tk.Label(self.sidebar, text="Maintenance", font=d.HEADLINE(), fg=d.C["text"],
+                 bg=d.C["surface_sunken"], anchor="w").pack(
+            fill="x", padx=18, pady=(22, 14))
+
+        self.tab_buttons = {}
+        for key, title in TABS:
+            button = tk.Label(self.sidebar, text=title, font=d.BODY(),
+                              fg=d.C["text_2"], bg=d.C["surface_sunken"],
+                              anchor="w", padx=14, pady=9, cursor="hand2")
+            button.pack(fill="x", padx=8, pady=1)
+            button.bind("<Button-1>", lambda _e, k=key: self.show(k))
+            self.tab_buttons[key] = button
+
+        self.content = tk.Frame(shell, bg=d.C["bg"])
+        self.content.pack(side="left", fill="both", expand=True)
+
+        d.present(self.window, root, width=self.WIDTH, height=self.HEIGHT)
         self.window.focus_force()
+        self.show("tiers")
+
+    # --- navigation --------------------------------------------------------
+    def show(self, key):
+        for name, button in self.tab_buttons.items():
+            selected = name == key
+            button.configure(fg=d.C["accent"] if selected else d.C["text_2"],
+                             bg=d.C["accent_wash"] if selected else d.C["surface_sunken"],
+                             font=d.font(13, "bold") if selected else d.BODY())
+        for child in self.content.winfo_children():
+            child.destroy()
+        frame = tk.Frame(self.content, bg=d.C["bg"])
+        frame.pack(fill="both", expand=True, padx=28, pady=26)
+        {"tiers": self._tiers, "snoozed": self._snoozed,
+         "skipped": self._skipped, "status": self._status}[key](frame)
+
+    def _heading(self, parent, title, subtitle):
+        tk.Label(parent, text=title, font=d.TITLE(), fg=d.C["text"], bg=d.C["bg"],
+                 anchor="w").pack(fill="x")
+        tk.Label(parent, text=subtitle, font=d.SUB(), fg=d.C["text_2"], bg=d.C["bg"],
+                 anchor="w", justify="left", wraplength=440).pack(fill="x", pady=(3, 18))
 
     # --- R7 ----------------------------------------------------------------
-    def _tiers_tab(self, parent):
-        frame = ttk.Frame(parent, padding=(16, 14))
-        ttk.Label(frame, text="Alert tiers", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            frame,
-            text="A system alerts on the tightest tier its RO date falls inside.\n"
-                 "Changes take effect at the next daily run.",
-            style="Muted.TLabel", justify="left",
-        ).pack(anchor="w", pady=(2, 12))
-
+    def _tiers(self, parent):
+        self._heading(parent, "Alert tiers",
+                      "A system alerts on the tightest tier its RO date falls inside. "
+                      "Changes take effect at the next daily run.")
         self.tier_vars = []
-        grid = ttk.Frame(frame)
-        grid.pack(anchor="w")
-        ttk.Label(grid, text="Tier", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(grid, text="Alert when the RO date is within (months)",
-                  style="Muted.TLabel").grid(row=0, column=1, sticky="w", padx=10)
-        ttk.Label(grid, text="Alert every (days)", style="Muted.TLabel").grid(
-            row=0, column=2, sticky="w", padx=10)
+        for index, tier in enumerate(self.state.tiers):
+            card = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+            card.pack(fill="x", pady=(0, 10))
+            body = card.body
+            name = "Wider tier" if index == 0 else "Tighter tier"
+            tk.Label(body, text=name, font=d.HEADLINE(), fg=d.C["text"],
+                     bg=d.C["surface"], anchor="w").pack(fill="x")
 
-        for index, tier in enumerate(self.state.tiers, start=1):
-            ttk.Label(grid, text=f"{index}").grid(row=index, column=0, sticky="w", pady=4)
+            grid = tk.Frame(body, bg=d.C["surface"])
+            grid.pack(fill="x", pady=(10, 0))
             months = tk.StringVar(value=str(tier.get("months", "")))
             days = tk.StringVar(value=str(tier.get("every_days", "")))
-            ttk.Entry(grid, textvariable=months, width=10).grid(row=index, column=1, padx=10)
-            ttk.Entry(grid, textvariable=days, width=10).grid(row=index, column=2, padx=10)
+            for column, (caption, var) in enumerate(
+                    [("Within (months)", months), ("Alert every (days)", days)]):
+                cell = tk.Frame(grid, bg=d.C["surface"])
+                cell.grid(row=0, column=column, sticky="w", padx=(0, 22))
+                tk.Label(cell, text=caption, font=d.CAPTION(), fg=d.C["text_2"],
+                         bg=d.C["surface"], anchor="w").pack(fill="x")
+                d.Field(cell, var, bg=d.C["surface"], width=120).pack(pady=(4, 0))
             self.tier_vars.append((tier.get("name", f"tier{index}"), months, days))
+            card.fit()
 
-        self.tier_message = ttk.Label(frame, text="", style="Muted.TLabel", wraplength=520,
-                                      justify="left")
-        self.tier_message.pack(anchor="w", pady=(12, 0))
-
-        buttons = ttk.Frame(frame)
-        buttons.pack(anchor="w", pady=(12, 0))
-        ttk.Button(buttons, text="Save", style="Accent.TButton",
-                   command=self._save_tiers).pack(side="left")
-        ttk.Button(buttons, text="Restore defaults",
-                   command=self._restore_defaults).pack(side="left", padx=8)
-        return frame
+        self.tier_message = tk.Label(parent, text="", font=d.CAPTION(),
+                                     fg=d.C["text_2"], bg=d.C["bg"], anchor="w",
+                                     justify="left", wraplength=440)
+        self.tier_message.pack(fill="x", pady=(6, 12))
+        buttons = tk.Frame(parent, bg=d.C["bg"])
+        buttons.pack(fill="x")
+        d.Button(buttons, "Save", kind="filled", command=self._save_tiers,
+                 bg=d.C["bg"]).pack(side="left")
+        d.Button(buttons, "Restore defaults", kind="plain",
+                 command=self._restore_defaults, bg=d.C["bg"]).pack(side="left", padx=6)
 
     def _save_tiers(self):
         tiers, errors = [], []
@@ -157,114 +214,122 @@ class AdminWindow:
                 errors.append("A blank or zero frequency was replaced with 30 days.")
             tiers.append({"name": name, "months": months, "every_days": days})
 
-        if len([t for t in tiers]) != len(self.tier_vars):
+        if len(tiers) != len(self.tier_vars):
             self.tier_message.configure(text=" ".join(errors) or "Nothing was saved.")
             return
-
         ordered = sorted(tiers, key=lambda t: -t["months"])
         if len({t["months"] for t in ordered}) != len(ordered):
             # R7 edge case: a tighter threshold set at or above the wider one.
-            self.tier_message.configure(text="The two thresholds must differ. Nothing was saved.")
+            self.tier_message.configure(
+                text="The two thresholds must differ. Nothing was saved.")
             return
-
         self.state.set_tiers(ordered)
         state_module.save(self.state)
-        summary = ", ".join(f"{t['months']}m every {t['every_days']}d" for t in ordered)
+        summary = ", ".join(f"{t['months']} months every {t['every_days']} days"
+                            for t in ordered)
         self.tier_message.configure(
             text=(" ".join(errors) + " " if errors else "") + f"Saved: {summary}.")
 
     def _restore_defaults(self):
         self.state.set_tiers(state_module.DEFAULT_TIERS)
         state_module.save(self.state)
+        self.show("tiers")
         self.tier_message.configure(
-            text="Restored 12 months / monthly and 6 months / weekly. Reopen this window to see them.")
+            text="Restored 12 months monthly, and 6 months weekly.")
 
-    # --- snooze visibility -------------------------------------------------
-    def _snoozed_tab(self, parent):
-        frame = ttk.Frame(parent, padding=(16, 14))
-        ttk.Label(frame, text="Snoozed systems", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            frame,
-            text=f"A system may be put off at most {MAX_SNOOZES_PER_SYSTEM} times and at most "
-                 f"{MAX_SNOOZE_DAYS} days at a time.",
-            style="Muted.TLabel",
-        ).pack(anchor="w", pady=(2, 10))
+    # --- lists -------------------------------------------------------------
+    def _rows(self, parent, columns, records, empty):
+        """One grid for the header and every row, so the columns line up."""
+        card = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+        card.pack(fill="x")
+        table = card.body
+        if not records:
+            tk.Label(table, text=empty, font=d.BODY(), fg=d.C["text_3"],
+                     bg=d.C["surface"], anchor="w").pack(fill="x", pady=6)
+            card.fit()
+            return
 
-        tree = ttk.Treeview(frame, columns=("until", "count"), show="tree headings", height=12)
-        tree.heading("#0", text="System")
-        tree.heading("until", text="Quiet until")
-        tree.heading("count", text="Times put off")
-        tree.column("#0", width=320)
-        tree.column("until", width=110, anchor="center")
-        tree.column("count", width=110, anchor="center")
-        tree.pack(fill="both", expand=True)
+        grid = tk.Frame(table, bg=d.C["surface"])
+        grid.pack(fill="x")
+        for index, (title, weight) in enumerate(columns):
+            grid.columnconfigure(index, weight=weight)
+            tk.Label(grid, text=title.upper(), font=d.font(10, "bold"),
+                     fg=d.C["text_3"], bg=d.C["surface"], anchor="w").grid(
+                row=0, column=index, sticky="w", pady=(0, 8), padx=(0, 14))
 
-        rows = self.state.snoozed_systems()
-        for key, until, count in rows:
-            label = " / ".join(part for part in key.split("|") if part) or key
-            tree.insert("", "end", text=label,
-                        values=(until.strftime("%d/%m/%Y"), count))
-        if not rows:
-            ttk.Label(frame, text="Nothing is snoozed.", style="Muted.TLabel").pack(
-                anchor="w", pady=(8, 0))
-        return frame
+        line = 1
+        for record in records:
+            tk.Frame(grid, height=1, bg=d.C["hairline"]).grid(
+                row=line, column=0, columnspan=len(columns), sticky="ew")
+            line += 1
+            for index, value in enumerate(record):
+                tk.Label(grid, text=value, font=d.SUB(), fg=d.C["text"],
+                         bg=d.C["surface"], anchor="w").grid(
+                    row=line, column=index, sticky="w", pady=9, padx=(0, 14))
+            line += 1
+        card.fit()
 
-    # --- R4 skipped rows ---------------------------------------------------
-    def _skipped_tab(self, parent):
-        frame = ttk.Frame(parent, padding=(16, 14))
-        ttk.Label(frame, text="Rows skipped at the last read", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            frame,
-            text="These rows hold no readable RO date, so they raise no alert.\n"
-                 "The table owner should correct the cell.",
-            style="Muted.TLabel", justify="left",
-        ).pack(anchor="w", pady=(2, 10))
+    def _snoozed(self, parent):
+        self._heading(parent, "Snoozed systems",
+                      f"A system may be put off at most {MAX_SNOOZES_PER_SYSTEM} times, "
+                      f"and at most {MAX_SNOOZE_DAYS} days at a time.")
+        records = [(label, until.strftime("%d/%m/%Y"), str(count))
+                   for label, until, count in self.state.snoozed_systems()]
+        self._rows(parent, [("System", 3), ("Quiet until", 1), ("Times put off", 1)],
+                   records, "Nothing is snoozed.")
 
-        tree = ttk.Treeview(frame, columns=("dept", "platform", "value"),
-                            show="headings", height=12)
-        for column, title, width in [("dept", "Department", 150),
-                                     ("platform", "Platform", 170),
-                                     ("value", "RO date cell", 200)]:
-            tree.heading(column, text=title)
-            tree.column(column, width=width)
-        tree.pack(fill="both", expand=True)
-        skipped = self.state.data.get("skipped_rows") or []
-        for item in skipped:
-            tree.insert("", "end", values=(item.get("department", ""),
-                                           item.get("platform", ""),
-                                           item.get("value", "") or "(empty)"))
-        if not skipped:
-            ttk.Label(frame, text="No rows were skipped.", style="Muted.TLabel").pack(
-                anchor="w", pady=(8, 0))
-        return frame
+    def _skipped(self, parent):
+        self._heading(parent, "Skipped rows",
+                      "These rows hold no readable RO date, so they raise no alert. "
+                      "The table owner should correct the cell.")
+        records = [(item.get("department", ""), item.get("platform", ""),
+                    item.get("value", "") or "(empty)")
+                   for item in (self.state.data.get("skipped_rows") or [])]
+        self._rows(parent, [("Department", 1), ("Platform", 1), ("RO date cell", 2)],
+                   records, "No rows were skipped at the last read.")
 
-    # --- status ------------------------------------------------------------
-    def _status_tab(self, parent):
-        frame = ttk.Frame(parent, padding=(16, 14))
-        ttk.Label(frame, text="Status", style="Title.TLabel").pack(anchor="w")
+    @staticmethod
+    def _shorten(text, limit=34):
+        """Tk wraps on whitespace only, so a long path has to be cut by hand."""
+        text = str(text)
+        if len(text) <= limit:
+            return text
+        head = limit // 2 - 2
+        return text[:head] + " … " + text[-(limit - head - 3):]
+
+    def _status(self, parent):
+        self._heading(parent, "Status", "What the app knows right now.")
         cfg = config_module.load()
         last_read = self.state.last_read
         typed = self.state.data.get("personal_number_typed", "")
         resolved = self.state.personal_number
         lines = [
             ("User", self.state.data.get("name", "")),
-            ("Personal number", resolved + (f"  (typed at first run: {typed})"
-                                            if typed and typed != resolved else "")),
+            ("Personal number",
+             resolved + (f"   (typed at first run: {typed})"
+                         if typed and typed != resolved else "")),
             ("Department", self.state.department),
-            ("Last table read", last_read.strftime("%d/%m/%Y %H:%M") if last_read else "never"),
-            ("SharePoint link", cfg.sharepoint_url or "(not set)"),
-            ("Configuration file", paths.config_path()),
-            ("State file", paths.state_path()),
-            ("Log file", paths.log_path()),
+            ("Last table read",
+             last_read.strftime("%d/%m/%Y at %H:%M") if last_read else "never"),
+            ("Table source", self._shorten(cfg.sharepoint_url or "(not set)")),
+            ("Configuration", self._shorten(paths.config_path())),
+            ("State", self._shorten(paths.state_path())),
+            ("Log", self._shorten(paths.log_path())),
         ]
-        grid = ttk.Frame(frame)
-        grid.pack(anchor="w", fill="x", pady=(10, 0))
+        card = d.Surface(parent, radius=14, padding=(20, 16), bg=d.C["bg"])
+        card.pack(fill="x")
+        body = card.body
         for index, (label, value) in enumerate(lines):
-            ttk.Label(grid, text=label, style="Muted.TLabel").grid(
-                row=index, column=0, sticky="nw", padx=(0, 14), pady=3)
-            ttk.Label(grid, text=value or "-", wraplength=380, justify="left").grid(
-                row=index, column=1, sticky="w", pady=3)
-        return frame
+            if index:
+                tk.Frame(body, height=1, bg=d.C["hairline"]).pack(fill="x", pady=8)
+            line = tk.Frame(body, bg=d.C["surface"])
+            line.pack(fill="x")
+            tk.Label(line, text=label, font=d.SUB(), fg=d.C["text_2"],
+                     bg=d.C["surface"], anchor="w", width=15).pack(side="left")
+            tk.Label(line, text=value or "-", font=d.SUB(), fg=d.C["text"],
+                     bg=d.C["surface"], anchor="w", justify="left",
+                     wraplength=340).pack(side="left", fill="x", expand=True)
+        card.fit()
 
 
 def open_maintenance(root, cfg, state):

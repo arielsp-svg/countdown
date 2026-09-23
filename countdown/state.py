@@ -123,8 +123,12 @@ class State:
         except (TypeError, ValueError):
             return 0
 
-    def set_snooze(self, key, until):
+    def set_snooze(self, key, until, label=None):
         rec = self.system(key)
+        if label:
+            # Kept so the admin window can name the system rather than show the
+            # internal key, which is lowercased and pipe separated.
+            rec["label"] = label
         rec["snooze_until"] = until.isoformat()
         rec["snooze_count"] = self.snooze_count(key) + 1
         # A snooze also counts as "seen today", so the cadence resumes from here.
@@ -143,7 +147,9 @@ class State:
             except ValueError:
                 continue
             if until >= today:
-                out.append((key, until, int(rec.get("snooze_count") or 0)))
+                name = rec.get("label") or " / ".join(
+                    part for part in key.split("|") if part) or key
+                out.append((name, until, int(rec.get("snooze_count") or 0)))
         return sorted(out, key=lambda item: item[1])
 
 
