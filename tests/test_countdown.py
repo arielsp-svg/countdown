@@ -316,6 +316,62 @@ class TestReadSchedule(unittest.TestCase):
         self.assertTrue(app_module.should_read(self.stale, self.now, False, later))
 
 
+class TestWhereThingsAreSaved(unittest.TestCase):
+    """Everything the app writes sits beside the .exe, and nowhere else."""
+
+    def setUp(self):
+        from countdown import paths
+        self.paths = paths
+
+    def test_state_log_and_config_share_the_app_folder(self):
+        folder = self.paths.app_dir()
+        for path in (self.paths.state_path(), self.paths.log_path(),
+                     self.paths.config_path(), self.paths.lock_path()):
+            self.assertEqual(os.path.dirname(path), folder)
+
+    def test_nothing_is_written_to_appdata(self):
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            self.assertNotIn(os.path.normpath(appdata),
+                             os.path.normpath(self.paths.state_path()))
+
+    def test_two_users_get_separate_state_files(self):
+        original = os.environ.get("USERNAME")
+        try:
+            os.environ["USERNAME"] = "8123456"
+            first = self.paths.state_path()
+            os.environ["USERNAME"] = "8123457"
+            second = self.paths.state_path()
+        finally:
+            if original is None:
+                os.environ.pop("USERNAME", None)
+            else:
+                os.environ["USERNAME"] = original
+        # R3: a second user on the same machine must not inherit the first's
+        # identity, snoozes or alert history.
+        self.assertNotEqual(first, second)
+        self.assertEqual(os.path.dirname(first), os.path.dirname(second))
+
+    def test_an_awkward_logon_name_still_makes_a_valid_filename(self):
+        saved = {k: os.environ.get(k) for k in ("USERNAME", "USER")}
+        try:
+            os.environ["USERNAME"] = "iaf" + chr(92) + "8123456"
+            self.assertEqual(self.paths.user_slug(), "iaf_8123456")
+            # With no logon name at all the file still has to be nameable.
+            os.environ["USERNAME"] = ""
+            os.environ["USER"] = ""
+            self.assertEqual(self.paths.user_slug(), self.paths.FALLBACK_USER)
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_a_writable_folder_is_reported_as_writable(self):
+        self.assertTrue(self.paths.writable())
+
+
 class TestStatePersistence(unittest.TestCase):
     def test_corrupt_state_file_falls_back_to_defaults(self):
         from countdown import paths

@@ -1,19 +1,30 @@
 """Where the app's files live.
 
-R13 says one .exe plus one .txt in the same folder. The spec's own Open
-Questions note that this leaves persisted state homeless, so state goes to
-%APPDATA%\\Countdown\\state.json and the delivered folder stays as specified.
+Everything the app writes sits in the folder the .exe is in. Nothing is written
+anywhere else: no %APPDATA%, no registry beyond the single startup value of R1,
+no temporary folder. Copy the folder and the whole thing moves with it.
 
-Setting COUNTDOWN_HOME puts the configuration file and the state side by side in
-that one folder instead. Nothing on a delivered Windows machine sets it; it
-exists so the app can be run and reset without touching the real locations.
+R13 asks for one .exe plus one .txt. The spec's own Open Questions note that
+this leaves persisted state homeless, so the folder also comes to hold a state
+file and a log.
+
+The state and the log are named per Windows user. R3 calls out a second user
+signing in on the same machine, and a single shared state file would hand him
+the first user's name, personal number, department, snoozes and alert history.
+Per user files keep the whole lot in the one folder without mixing people up.
+
+Setting COUNTDOWN_HOME points all of this somewhere else, which is how the app
+is run and reset during testing. Nothing on a delivered machine sets it.
 """
 import os
+import re
 import sys
+
+FALLBACK_USER = "user"
 
 
 def home_override():
-    """COUNTDOWN_HOME, when set, holds both the .txt and the state."""
+    """COUNTDOWN_HOME, when set, stands in for the .exe's folder."""
     home = os.environ.get("COUNTDOWN_HOME")
     if not home:
         return None
@@ -38,27 +49,47 @@ def exe_path() -> str:
     return os.path.abspath(sys.argv[0])
 
 
+def user_slug() -> str:
+    """A filename safe form of the logon name, for naming this user's files.
+
+    `iaf\\8123456` becomes `8123456`, which is the personal number R3 works in.
+    """
+    raw = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    slug = re.sub(r"[^A-Za-z0-9._-]", "_", raw.strip())
+    return slug[:40] or FALLBACK_USER
+
+
 def config_path() -> str:
     return os.path.join(app_dir(), "countdown.txt")
 
 
 def state_dir() -> str:
-    override = home_override()
-    if override:
-        return override
-    base = os.environ.get("APPDATA") or os.path.expanduser("~")
-    d = os.path.join(base, "Countdown")
-    os.makedirs(d, exist_ok=True)
-    return d
+    return app_dir()
 
 
 def state_path() -> str:
-    return os.path.join(state_dir(), "state.json")
+    return os.path.join(state_dir(), f"countdown-state-{user_slug()}.json")
 
 
 def log_path() -> str:
-    return os.path.join(state_dir(), "countdown.log")
+    return os.path.join(state_dir(), f"countdown-{user_slug()}.log")
 
 
 def lock_path() -> str:
-    return os.path.join(state_dir(), "countdown.lock")
+    return os.path.join(state_dir(), f"countdown-{user_slug()}.lock")
+
+
+def writable() -> bool:
+    """Whether the folder the .exe is in can actually be written to.
+
+    A folder under Program Files, or a read only share, cannot hold the state.
+    The caller says so plainly rather than failing silently later.
+    """
+    probe = os.path.join(app_dir(), f".countdown-write-test-{os.getpid()}")
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.unlink(probe)
+        return True
+    except OSError:
+        return False

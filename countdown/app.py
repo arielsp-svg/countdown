@@ -225,6 +225,24 @@ def main(argv=None) -> int:
         # Already running, or asked for explicitly: show the maintenance window.
         return open_maintenance_only()
 
+    if not paths.writable():
+        # Everything the app saves lives beside the .exe. A folder it cannot
+        # write to means no first run details, no snoozes and no alert history,
+        # so say so rather than run and quietly forget everything.
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Countdown",
+            "Countdown keeps its settings in the folder it runs from, and that "
+            "folder is read only:\n\n"
+            f"{paths.app_dir()}\n\n"
+            "Copy Countdown.exe and countdown.txt somewhere you can write to, "
+            "such as a folder under your user profile, and run it again.",
+        )
+        root.destroy()
+        log.error("the app folder is not writable: %s", paths.app_dir())
+        return 1
+
     log.info("starting, exe at %s, logon %s", paths.exe_path(), identity.logon_name())
     try:
         return Countdown().run()

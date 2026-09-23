@@ -193,11 +193,27 @@ Run `Countdown.exe` again while it is already running — or run it with
 
 ## Where things live
 
-| | |
+Everything sits in the folder the .exe runs from. Nothing is written to
+`%APPDATA%`, to a temporary folder, or anywhere else; the only thing outside the
+folder is the single startup value of R1 under `HKCU`.
+
+| File | Holds |
 |---|---|
-| Configuration | `countdown.txt`, next to the .exe |
-| State | `%APPDATA%\Countdown\state.json` |
-| Log | `%APPDATA%\Countdown\countdown.log` |
+| `countdown.txt` | Credentials, the table source, the department list |
+| `countdown-state-<user>.json` | First run details, snoozes, alert history |
+| `countdown-<user>.log` | What the app did, and why |
+
+The state and the log are named per Windows user. R3 calls out a second user
+signing in on the same machine, and one shared state file would hand him the
+first user's name, personal number, department and snoozes. Per user files keep
+everything in the one folder without mixing people up.
+
+Because nothing lives outside the folder, the whole thing is portable: copy the
+folder to another machine, or onto a stick, and the settings travel with it.
+
+The folder has to be writable. Put it somewhere under the user's profile rather
+than in `Program Files`. If it is read only the app says so on launch and stops,
+rather than running and quietly forgetting everything.
 
 ## Decisions taken on the spec's Open Questions
 
@@ -206,7 +222,7 @@ changed; the code points at the requirement it serves.
 
 | Question | Decided as |
 |---|---|
-| **State has no home** (R13) | `countdown.txt` holds only what an admin edits. Everything the app writes — identity, tiers, alert history, snoozes — goes to `%APPDATA%\Countdown\state.json`. The delivered folder stays as R13 specifies. Being per user, it also settles "a different user signs in on the same machine": he gets his own first run. |
+| **State has no home** (R13) | Everything the app writes lives in the folder the .exe runs from, as `countdown-state-<user>.json`, so nothing is kept anywhere else and the folder is portable. The per user filename settles "a different user signs in on the same machine": he gets his own first run rather than inheriting one. |
 | **Personal number collected twice** | The field stays, prefilled from the logon name. On a mismatch the logon value wins, because it cannot be mistyped; the typed value is kept and shown in the maintenance window. A logon name not of the form `iaf\<number>` falls back to the typed value. |
 | **Snooze ceiling** | At most 90 days per snooze and at most 3 snoozes per system, after which the button is refused. Bounded above by the RO date and below by tomorrow, so the picker cannot produce an invalid date. Snoozes are per user, and every live one is listed in the maintenance window. |
 | **Department list source** | Maintained in the maintenance window, written back to `countdown.txt`. With none set, it falls back to the table's own department column. |
