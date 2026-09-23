@@ -129,8 +129,13 @@ Open `countdown.txt` and set:
   the folder or copying the .exe to another machine repairs itself.
 - **First run window** asks for name, personal number and department. Nothing
   runs in the background until all three are given (R2).
-- **Every 24 hours** the table is downloaded and read. Only rows in your
-  department count (R4, R5).
+- **On every launch, and every 24 hours after that**, the table is read. Only
+  rows in your department count (R4, R5). R4 asks for the 24 hour cadence; the
+  read on launch is added on top, because the app starts with Windows and a
+  machine that was off for a week would otherwise wait out the rest of the
+  interval on a stale timestamp. Reading is not alerting: R6, R10 and R11 still
+  decide whether anything is shown, so reopening the app refreshes the data
+  without producing extra popups.
 - **Alerts** fire monthly inside 12 months of the RO date and weekly inside 6
   months. A row inside both windows uses the tighter one (R6).
 - **The popup** shows the platform and the RO date, offers to add the date to

@@ -27,6 +27,28 @@ TICK_MS = 15 * 60 * 1000              # how often the clock is consulted
 RETRY_AFTER = timedelta(hours=2)      # after an unreachable link
 
 
+def should_read(last_read, now, scanned_this_launch, not_before=None) -> bool:
+    """Whether to go and read the table now.
+
+    R4 asks for a read every 24 hours. On top of that, every launch reads once
+    before anything else: the app starts with Windows, so a machine that was off
+    for a week would otherwise wait out the rest of the interval on the stale
+    timestamp it saved before shutting down.
+
+    A launch read ignores the retry backoff as well. The backoff exists for a
+    link that was unreachable, and a fresh launch is the most likely moment for
+    the network to have come back.
+
+    Reading is not alerting: R6, R10 and R11 still decide whether anything is
+    shown, so opening the app repeatedly refreshes the data without nagging.
+    """
+    if not scanned_this_launch:
+        return True
+    if not_before and now < not_before:
+        return False
+    return last_read is None or (now - last_read) >= READ_INTERVAL
+
+
 def setup_logging() -> None:
     handler = logging.handlers.RotatingFileHandler(
         paths.log_path(), maxBytes=512_000, backupCount=2, encoding="utf-8")
@@ -45,6 +67,7 @@ class Countdown:
         self.root.title("Countdown")
         design.adopt_system_theme()
         self._busy = False
+        self._scanned_this_launch = False
         self._next_read_not_before = None
 
     # --- first run (R2) ----------------------------------------------------
@@ -92,11 +115,8 @@ class Countdown:
 
     # --- daily cycle (R4 to R11) ------------------------------------------
     def due_for_read(self) -> bool:
-        now = datetime.now()
-        if self._next_read_not_before and now < self._next_read_not_before:
-            return False
-        last = self.state.last_read
-        return last is None or (now - last) >= READ_INTERVAL
+        return should_read(self.state.last_read, datetime.now(),
+                           self._scanned_this_launch, self._next_read_not_before)
 
     def tick(self):
         if not self._busy and self.due_for_read():
@@ -105,6 +125,7 @@ class Countdown:
 
     def start_cycle(self):
         self._busy = True
+        self._scanned_this_launch = True
         # Pick up anything the maintenance window changed since the last run (R7).
         self.state = state_module.load()
         self.state.data["personal_number"] = identity.resolve(self.state) or self.state.personal_number

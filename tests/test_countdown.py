@@ -8,6 +8,7 @@ from datetime import date, timedelta
 os.environ.setdefault("APPDATA", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from countdown import app as app_module  # noqa: E402
 from countdown import calendar_file, config, engine, identity, table  # noqa: E402
 from countdown import state as state_module  # noqa: E402
 
@@ -248,6 +249,38 @@ class TestCalendarFile(unittest.TestCase):
         self.assertIn("SUMMARY:RO date - F-16", ics)
         self.assertIn(r"a\; b", ics)          # semicolons escaped per RFC 5545
         self.assertTrue(ics.startswith("BEGIN:VCALENDAR"))
+
+
+class TestReadSchedule(unittest.TestCase):
+    """R4 every 24 hours, plus a read on every launch."""
+
+    def setUp(self):
+        from datetime import datetime
+        self.now = datetime(2026, 9, 23, 9, 0)
+        self.recent = datetime(2026, 9, 23, 8, 0)      # an hour ago
+        self.stale = datetime(2026, 9, 21, 8, 0)       # two days ago
+
+    def test_a_launch_always_reads_even_if_just_read(self):
+        self.assertTrue(app_module.should_read(self.recent, self.now, False))
+
+    def test_after_the_launch_read_it_waits_out_the_interval(self):
+        self.assertFalse(app_module.should_read(self.recent, self.now, True))
+
+    def test_it_reads_again_once_the_interval_has_passed(self):
+        self.assertTrue(app_module.should_read(self.stale, self.now, True))
+
+    def test_never_read_before_means_read(self):
+        self.assertTrue(app_module.should_read(None, self.now, True))
+
+    def test_the_retry_backoff_holds_a_running_app_back(self):
+        from datetime import timedelta
+        later = self.now + timedelta(hours=1)
+        self.assertFalse(app_module.should_read(self.stale, self.now, True, later))
+
+    def test_a_launch_ignores_the_backoff(self):
+        from datetime import timedelta
+        later = self.now + timedelta(hours=1)
+        self.assertTrue(app_module.should_read(self.stale, self.now, False, later))
 
 
 class TestStatePersistence(unittest.TestCase):
