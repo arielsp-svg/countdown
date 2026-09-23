@@ -143,7 +143,10 @@ class AdminWindow:
                              font=d.font(13, "bold") if selected else d.BODY())
         for child in self.content.winfo_children():
             child.destroy()
-        frame = tk.Frame(self.content, bg=d.C["bg"])
+        # Every tab scrolls: the user list and the tiers both outgrow the window.
+        area = d.ScrollArea(self.content, bg=d.C["bg"])
+        area.pack(fill="both", expand=True)
+        frame = tk.Frame(area.body, bg=d.C["bg"])
         frame.pack(fill="both", expand=True, padx=28, pady=26)
         {"tiers": self._tiers, "users": self._users,
          "snoozed": self._snoozed, "skipped": self._skipped,
@@ -248,17 +251,13 @@ class AdminWindow:
                       "The app matches the Windows logon name against the personal "
                       "number, so nobody is ever asked to fill anything in.")
 
-        if not source:
-            self._empty_card(parent,
-                             "No user list is set. Add users_url to countdown.txt, "
-                             "pointing at a workbook or a file path.")
+        report = users_module.describe(source)
+        self._source_card(parent, report)
+
+        if report["error"] or not source:
             return
 
-        try:
-            users, skipped = users_module.load(source)
-        except users_module.UsersError as exc:
-            self._empty_card(parent, str(exc))
-            return
+        users, skipped = users_module.load(source)
 
         self._users_cache = users
         editable = users_module.writable_path(source) is not None
@@ -351,6 +350,43 @@ class AdminWindow:
         d.Button(form.body, "Add to the list", kind="filled", bg=d.C["surface"],
                  command=self._add_user).pack(anchor="w", pady=(12, 0))
         form.fit()
+
+    def _source_card(self, parent, report):
+        """Say plainly what the user list did, so a silent failure is readable."""
+        good = not report["error"]
+        card = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+        card.pack(fill="x", pady=(0, 14))
+        body = card.body
+
+        headline = (f"Read {report['count']} people" if good
+                    else "The user list could not be read")
+        tk.Label(body, text=headline, font=d.HEADLINE(),
+                 fg=d.C["text"] if good else d.C["danger"],
+                 bg=d.C["surface"], anchor="w").pack(fill="x")
+
+        lines = [("users_url", report["source"])]
+        if report["resolved"] and report["resolved"] != report["source"]:
+            lines.append(("Resolves to", report["resolved"]))
+        if report["exists"] is not None:
+            lines.append(("File found", "yes" if report["exists"] else "no"))
+        if good:
+            lines.append(("Editable here", "yes" if report["editable"]
+                          else "no, it is a link"))
+            if report["skipped"]:
+                lines.append(("Rows ignored",
+                              f"{report['skipped']} with no personal number or department"))
+        else:
+            lines.append(("Error", report["error"]))
+
+        for caption, value in lines:
+            line = tk.Frame(body, bg=d.C["surface"])
+            line.pack(fill="x", pady=(6, 0))
+            tk.Label(line, text=caption, font=d.CAPTION(), fg=d.C["text_2"],
+                     bg=d.C["surface"], anchor="w", width=14).pack(side="left")
+            tk.Label(line, text=value, font=d.SUB(), fg=d.C["text"],
+                     bg=d.C["surface"], anchor="w", justify="left",
+                     wraplength=430).pack(side="left", fill="x", expand=True)
+        card.fit()
 
     def _empty_card(self, parent, message):
         card = d.Surface(parent, radius=14, padding=(18, 20), bg=d.C["bg"])

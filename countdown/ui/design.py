@@ -442,6 +442,70 @@ class Select(tk.Canvas):
         self._redraw()
 
 
+class ScrollArea(tk.Frame):
+    """A vertically scrolling region. Put content into `.body`.
+
+    The scrollbar only appears when the content is actually taller than the
+    window, so a short tab looks exactly as it did before.
+    """
+
+    def __init__(self, master, bg=None, **kw):
+        self._bg = bg or C["bg"]
+        super().__init__(master, bg=self._bg, **kw)
+        self.canvas = tk.Canvas(self, bg=self._bg, highlightthickness=0, bd=0)
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        self.bar = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview,
+                                width=12, troughcolor=self._bg, bd=0,
+                                highlightthickness=0, relief="flat")
+        self.canvas.configure(yscrollcommand=self._on_scroll)
+
+        self.body = tk.Frame(self.canvas, bg=self._bg)
+        self._window = self.canvas.create_window(0, 0, window=self.body, anchor="nw")
+        self.body.bind("<Configure>", self._body_resized)
+        self.canvas.bind("<Configure>", self._canvas_resized)
+        for widget in (self, self.canvas, self.body):
+            widget.bind("<Enter>", self._grab_wheel)
+            widget.bind("<Leave>", self._release_wheel)
+
+    def _on_scroll(self, first, last):
+        # Show the bar only when there is something to scroll to.
+        if float(first) <= 0.0 and float(last) >= 1.0:
+            self.bar.pack_forget()
+        else:
+            self.bar.pack(side="right", fill="y")
+        self.bar.set(first, last)
+
+    def _body_resized(self, _event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _canvas_resized(self, event):
+        self.canvas.itemconfigure(self._window, width=event.width)
+
+    # Wheel events go to whatever the pointer is over, so they are bound while
+    # the pointer is inside and released when it leaves.
+    def _grab_wheel(self, _event=None):
+        self.canvas.bind_all("<MouseWheel>", self._wheel)       # Windows, macOS
+        self.canvas.bind_all("<Button-4>", self._wheel)         # X11
+        self.canvas.bind_all("<Button-5>", self._wheel)
+
+    def _release_wheel(self, _event=None):
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.canvas.unbind_all(sequence)
+
+    def _wheel(self, event):
+        first, last = self.canvas.yview()
+        if first <= 0.0 and last >= 1.0:
+            return
+        if getattr(event, "num", None) == 4:
+            step = -1
+        elif getattr(event, "num", None) == 5:
+            step = 1
+        else:
+            step = -1 if event.delta > 0 else 1
+        self.canvas.yview_scroll(step, "units")
+
+
 def label(master, text, style=None, fg=None, bg=None, **kw):
     return tk.Label(master, text=text, font=style or BODY(),
                     fg=fg or C["text"], bg=bg or C["surface"],

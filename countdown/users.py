@@ -133,6 +133,40 @@ def load(source: str):
     return parse(payload)
 
 
+def describe(source: str) -> dict:
+    """What actually happened when the user list was last looked at.
+
+    A path that resolves but yields nothing looks the same as a path that was
+    never read, so this reports each step: what the link resolved to, whether
+    the file is there, how many rows came back, and the error if one did.
+    """
+    report = {"source": source or "(not set)", "resolved": "", "exists": None,
+              "editable": False, "count": 0, "skipped": 0, "error": ""}
+    if not source:
+        report["error"] = "no users_url is set in countdown.txt"
+        return report
+
+    local = table.resolve_local(source)
+    if local is None:
+        report["resolved"] = source + "   (a link, so it can only be read)"
+    else:
+        report["resolved"] = local
+        report["exists"] = os.path.exists(local)
+        report["editable"] = writable_path(source) is not None
+
+    try:
+        users, skipped = load(source)
+    except UsersError as exc:
+        report["error"] = str(exc)
+        return report
+    except Exception as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+        return report
+    report["count"] = len(users)
+    report["skipped"] = len(skipped)
+    return report
+
+
 def find(users, personal_number: str):
     """The user with this personal number, or None."""
     wanted = normalise_number(personal_number)
