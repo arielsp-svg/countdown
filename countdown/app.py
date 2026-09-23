@@ -74,8 +74,9 @@ class Countdown:
     def department_choices(self):
         """Closed list for the first run window.
 
-        The configured list wins. With none configured, the list is taken from
-        the table's own department column, which keeps the two in step.
+        The list from countdown.txt wins, which is what the maintenance window
+        edits. With none set, the list is taken from the table's own department
+        column, which keeps the two in step.
         """
         if self.config.departments:
             return self.config.departments
@@ -126,8 +127,10 @@ class Countdown:
     def start_cycle(self):
         self._busy = True
         self._scanned_this_launch = True
-        # Pick up anything the maintenance window changed since the last run (R7).
+        # Pick up anything the maintenance window changed since the last run
+        # (R7, and the department list). Both live outside this process.
         self.state = state_module.load()
+        self.config = config_module.load()
         self.state.data["personal_number"] = identity.resolve(self.state) or self.state.personal_number
         url = self.config.sharepoint_url
         thread = threading.Thread(target=self._download, args=(url,), daemon=True)

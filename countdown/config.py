@@ -4,9 +4,13 @@ Format is `key = value`, one per line. `#` starts a comment. Missing, empty or
 malformed files never crash the app: every key falls back to a default and the
 admin window refuses to open when credentials are absent (R8 edge cases).
 """
+import logging
 import os
+import tempfile
 
 from . import paths
+
+log = logging.getLogger(__name__)
 
 DEFAULTS = {
     "admin_username": "",
@@ -71,6 +75,53 @@ def load() -> Config:
         if key in DEFAULTS:
             cfg[key] = value.strip()
     return cfg
+
+
+def save_value(key: str, value: str) -> bool:
+    """Write one key back to countdown.txt, leaving the rest of the file alone.
+
+    The file is the admin's, with their comments and their ordering, and it also
+    holds the credentials. Only the one line is rewritten; an absent key is
+    appended at the end.
+    """
+    key = key.strip().lower()
+    if key not in DEFAULTS:
+        return False
+    ensure_exists()
+    path = paths.config_path()
+    try:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        lines = []
+
+    replaced = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name = stripped.partition("=")[0].strip().lower().replace(" ", "_")
+        if name == key:
+            lines[index] = f"{key} = {value}"
+            replaced = True
+            break
+    if not replaced:
+        lines.append(f"{key} = {value}")
+
+    target = path
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target) or ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        os.replace(tmp, target)
+        return True
+    except OSError as exc:
+        log.warning("could not write %s: %s", target, exc)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
 
 
 def ensure_exists() -> None:

@@ -182,6 +182,10 @@ Run `Countdown.exe` again while it is already running — or run it with
 
 - **Alert tiers** — the threshold in months and the frequency in days per tier.
   Changes apply at the next daily run (R7).
+- **Departments** — the closed list the first run window offers. Add one, remove
+  one, or take the ones the last table read found. The list is written back to
+  `countdown.txt`, so it travels with the .exe rather than staying on the machine
+  that edited it.
 - **Snoozed systems** — what has been put off, until when, and how many times.
 - **Skipped rows** — rows whose RO date cell holds free text, so the table owner
   can fix the cell.
@@ -205,7 +209,7 @@ changed; the code points at the requirement it serves.
 | **State has no home** (R13) | `countdown.txt` holds only what an admin edits. Everything the app writes — identity, tiers, alert history, snoozes — goes to `%APPDATA%\Countdown\state.json`. The delivered folder stays as R13 specifies. Being per user, it also settles "a different user signs in on the same machine": he gets his own first run. |
 | **Personal number collected twice** | The field stays, prefilled from the logon name. On a mismatch the logon value wins, because it cannot be mistyped; the typed value is kept and shown in the maintenance window. A logon name not of the form `iaf\<number>` falls back to the typed value. |
 | **Snooze ceiling** | At most 90 days per snooze and at most 3 snoozes per system, after which the button is refused. Bounded above by the RO date and below by tomorrow, so the picker cannot produce an invalid date. Snoozes are per user, and every live one is listed in the maintenance window. |
-| **Department list source** | `departments` in the .txt, falling back to the table's own department column. |
+| **Department list source** | Maintained in the maintenance window, written back to `countdown.txt`. With none set, it falls back to the table's own department column. |
 | **Add to calendar** | An .ics file handed to the shell, which opens it in the default calendar. No Outlook automation, no extra dependency. |
 | **Link unreachable or layout changed** | Retry quietly in 2 hours. The user is not interrupted for an infrastructure problem; the failure goes to the log. |
 | **Several systems due the same day** | One popup per system, shown one after another, soonest RO date first. |

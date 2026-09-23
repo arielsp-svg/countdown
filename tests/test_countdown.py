@@ -239,6 +239,39 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.departments, ["Alpha", "Bravo"])
 
 
+class TestDepartmentList(unittest.TestCase):
+    """The closed list of R2, maintained from the maintenance window."""
+
+    def setUp(self):
+        from countdown import paths
+        self.path = paths.config_path()
+        config.ensure_exists()
+
+    def test_a_department_is_written_back_to_the_txt(self):
+        config.save_value("departments", "Avionics, Logistics")
+        self.assertEqual(config.load().departments, ["Avionics", "Logistics"])
+
+    def test_writing_one_key_leaves_the_others_alone(self):
+        config.save_value("admin_password", "hunter2")
+        config.save_value("departments", "Avionics")
+        cfg = config.load()
+        self.assertEqual(cfg.admin_password, "hunter2")
+        self.assertEqual(cfg.departments, ["Avionics"])
+
+    def test_the_admin_comments_survive_a_write(self):
+        config.save_value("departments", "Avionics")
+        with open(self.path, encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn("# Countdown configuration", body)
+
+    def test_an_unknown_key_is_refused(self):
+        self.assertFalse(config.save_value("not_a_real_key", "x"))
+
+    def test_an_emptied_list_reads_back_as_empty(self):
+        config.save_value("departments", "")
+        self.assertEqual(config.load().departments, [])
+
+
 class TestCalendarFile(unittest.TestCase):
     """R9: the popup offers to add the date to the calendar."""
 

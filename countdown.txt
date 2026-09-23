@@ -2,11 +2,11 @@
 # Anyone who can read this folder can read these credentials (see spec Risks).
 
 admin_username = admin
-admin_password = change-me
+admin_password = hunter2
 
 # Anonymous SharePoint direct link to the RO table (.xlsx or .csv).
 sharepoint_url =
 
 # Closed list offered on the first run window (R2). Comma separated.
 # Leave blank to take the list from the table's department column instead.
-departments =
+departments = Avionics

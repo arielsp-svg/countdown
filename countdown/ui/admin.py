@@ -90,6 +90,7 @@ class CredentialPrompt:
 
 TABS = [
     ("tiers", "Alert tiers"),
+    ("departments", "Departments"),
     ("snoozed", "Snoozed"),
     ("skipped", "Skipped rows"),
     ("status", "Status"),
@@ -144,8 +145,9 @@ class AdminWindow:
             child.destroy()
         frame = tk.Frame(self.content, bg=d.C["bg"])
         frame.pack(fill="both", expand=True, padx=28, pady=26)
-        {"tiers": self._tiers, "snoozed": self._snoozed,
-         "skipped": self._skipped, "status": self._status}[key](frame)
+        {"tiers": self._tiers, "departments": self._departments,
+         "snoozed": self._snoozed, "skipped": self._skipped,
+         "status": self._status}[key](frame)
 
     def _heading(self, parent, title, subtitle):
         tk.Label(parent, text=title, font=d.TITLE(), fg=d.C["text"], bg=d.C["bg"],
@@ -236,6 +238,94 @@ class AdminWindow:
         self.show("tiers")
         self.tier_message.configure(
             text="Restored 12 months monthly, and 6 months weekly.")
+
+    # --- the closed list offered at first run (R2) --------------------------
+    def _departments(self, parent):
+        self._heading(parent, "Departments",
+                      "The closed list offered on the first run window. It is kept in "
+                      "countdown.txt, so it travels with the .exe to other machines.")
+
+        cfg = config_module.load()
+        current = cfg.departments
+
+        card = d.Surface(parent, radius=14, padding=(18, 14), bg=d.C["bg"])
+        card.pack(fill="x")
+        body = card.body
+
+        if not current:
+            tk.Label(body, text="No departments set. Until one is added, the first run "
+                                "window falls back to the table's own department column.",
+                     font=d.SUB(), fg=d.C["text_3"], bg=d.C["surface"], anchor="w",
+                     justify="left", wraplength=420).pack(fill="x", pady=4)
+        for index, name in enumerate(current):
+            if index:
+                tk.Frame(body, height=1, bg=d.C["hairline"]).pack(fill="x")
+            line = tk.Frame(body, bg=d.C["surface"])
+            line.pack(fill="x", pady=2)
+            tk.Label(line, text=name, font=d.BODY(), fg=d.C["text"],
+                     bg=d.C["surface"], anchor="w").pack(side="left", pady=6)
+            d.Button(line, "Remove", kind="plain", bg=d.C["surface"],
+                     command=lambda n=name: self._remove_department(n)).pack(side="right")
+        card.fit()
+
+        self.department_var = tk.StringVar()
+        adder = tk.Frame(parent, bg=d.C["bg"])
+        adder.pack(fill="x", pady=(14, 0))
+        field = d.Field(adder, self.department_var, bg=d.C["bg"], width=240)
+        field.pack(side="left")
+        d.Button(adder, "Add", kind="filled", bg=d.C["bg"],
+                 command=self._add_department).pack(side="left", padx=8)
+        field.entry.bind("<Return>", lambda _e: self._add_department())
+
+        self.department_message = tk.Label(parent, text="", font=d.CAPTION(),
+                                           fg=d.C["text_2"], bg=d.C["bg"], anchor="w",
+                                           justify="left", wraplength=440)
+        self.department_message.pack(fill="x", pady=(10, 0))
+
+        seen = [name for name in (self.state.data.get("departments_seen") or [])
+                if name.casefold() not in {c.casefold() for c in current}]
+        if seen:
+            tk.Label(parent, text="Seen in the table but not on the list:",
+                     font=d.CAPTION(), fg=d.C["text_2"], bg=d.C["bg"], anchor="w").pack(
+                fill="x", pady=(16, 6))
+            d.Button(parent, "Add " + ", ".join(seen[:4]) + ("…" if len(seen) > 4 else ""),
+                     kind="tinted", bg=d.C["bg"],
+                     command=lambda: self._add_many(seen)).pack(anchor="w")
+
+    def _write_departments(self, names, message):
+        if config_module.save_value("departments", ", ".join(names)):
+            self.show("departments")
+            self.department_message.configure(text=message)
+        else:
+            self.department_message.configure(
+                text="countdown.txt could not be written. Check the folder's permissions.")
+
+    def _add_department(self):
+        name = self.department_var.get().strip()
+        current = config_module.load().departments
+        if not name:
+            self.department_message.configure(text="Type a department name first.")
+            return
+        if name.casefold() in {c.casefold() for c in current}:
+            self.department_message.configure(text=f"{name} is already on the list.")
+            return
+        self._write_departments(current + [name], f"Added {name}.")
+
+    def _add_many(self, names):
+        current = config_module.load().departments
+        known = {c.casefold() for c in current}
+        fresh = [n for n in names if n.casefold() not in known]
+        self._write_departments(current + fresh,
+                                f"Added {len(fresh)} from the table.")
+
+    def _remove_department(self, name):
+        current = config_module.load().departments
+        remaining = [c for c in current if c.casefold() != name.casefold()]
+        note = f"Removed {name}."
+        if name.casefold() == (self.state.department or "").casefold():
+            # Removing it does not un-set anyone already running.
+            note += " Users already set to it keep it until their next first run."
+        self._write_departments(remaining, note)
 
     # --- lists -------------------------------------------------------------
     def _rows(self, parent, columns, records, empty):
