@@ -10,3 +10,4 @@ countdown.lock
 state.json
 demo/sandbox/
 .venv/
+.DS_Store

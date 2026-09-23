@@ -40,6 +40,38 @@ docker run --rm --platform linux/amd64 -v "$PWD":/src -w /src tobix/pywine:3.12 
 The result is the same `dist/Countdown.exe`. On Apple Silicon this runs under
 x86 emulation, so expect it to be slow.
 
+## An example table
+
+`demo/example-ro-table.xlsx` is a sample of the table the app reads. It is laid
+out the way a maintained sheet would be: a title row above the header, the RO
+dates held as real Excel date cells rather than text, and the eight columns in
+their natural order.
+
+Nine rows, each one showing a behaviour from the requirements:
+
+| Row | Shows |
+|---|---|
+| F-16 Barak, 4 months out | Inside 6 months, so the weekly tier (R6) |
+| F-15 Ra'am, 10 months out | Inside 12 months, so the monthly tier (R6) |
+| C-130 Shimshon, 18 months out | Beyond both windows, no alert |
+| Apache AH-64, 3 months past | RO date already gone, no alert |
+| Blackhawk, `to be confirmed` | Unreadable RO date: skipped, listed for the admin (R4) |
+| Beechcraft 200, empty cell | Same, skipped |
+| Three rows in other departments | Filtered out for an Avionics user (R5) |
+
+Point `sharepoint_url` at it to try the app against a real .xlsx:
+
+```
+sharepoint_url = demo/example-ro-table.xlsx
+```
+
+The dates are written relative to the day the file was generated, so the
+committed copy ages. Regenerate it whenever it goes stale:
+
+```
+python demo/make_example_xlsx.py
+```
+
 ## Try it on a Mac
 
 The app is plain Python and tkinter, so it runs from source on macOS. Two things
